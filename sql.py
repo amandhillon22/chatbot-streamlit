@@ -2,6 +2,7 @@ import psycopg2
 import os
 from dotenv import load_dotenv
 import datetime
+import streamlit as st
 
 load_dotenv()
 
@@ -14,20 +15,30 @@ def get_connection():
         port=5432
     )
 
+# Add persistent debug log to Streamlit sidebar
+if 'debug_log' not in st.session_state:
+    st.session_state['debug_log'] = []
+
 def run_query(query):
     try:
-        print(f"\n[DEBUG] SQL Query: {query}\n")
+        debug_msg = f"[DEBUG] SQL Query: {query}"
+        print(f"\n{debug_msg}\n", flush=True)
+        st.session_state['debug_log'].append(debug_msg)
         conn = get_connection()
         cur = conn.cursor()
         cur.execute(query)
         rows = cur.fetchall()
         columns = [desc[0] for desc in cur.description]
-        print(f"[DEBUG] Rows returned: {len(rows)}\n")
+        debug_msg2 = f"[DEBUG] Rows returned: {len(rows)}"
+        print(f"{debug_msg2}\n", flush=True)
+        st.session_state['debug_log'].append(debug_msg2)
         cur.close()
         conn.close()
         return columns, rows
     except Exception as e:
-        print("❌ SQL Execution Error:", e)
+        err_msg = f"❌ SQL Execution Error: {e}"
+        print(err_msg, flush=True)
+        st.session_state['debug_log'].append(err_msg)
         raise
 
 def get_text_columns(schema=None, table=None):

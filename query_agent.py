@@ -214,29 +214,31 @@ Return the cleaned, user-friendly answer only:
         response = model.generate_content(formatting_prompt)
         raw_response = response.text.strip()
 
+        # Cleanup extra line breaks
         cleaned_response = re.sub(r'\n{3,}', '\n\n', raw_response)
         cleaned_response = re.sub(r'(\n\s*)+\Z', '', cleaned_response)
         cleaned_response = re.sub(r' +\n', '\n', cleaned_response)
 
-
+        # Save structured result for follow-up
         st.session_state["last_result_summary"] = {
             "columns": columns,
             "rows": rows_json,
             "user_question": user_question
         }
 
-        entities = []
-        if rows_json and columns:
-            top_row = rows_json[0]
-            for col in columns:
-                val = top_row.get(col)
-                if isinstance(val, str) and val.isalpha():
-                    entities.append(val)
+        # Extract relevant row labels like film titles, names, etc.
+        named_entities = []
+        for row in rows_json:
+            for key in ['title', 'name', 'film_title']:  # extendable
+                val = row.get(key)
+                if isinstance(val, str) and val.strip():
+                    named_entities.append(val.strip())
+                    break  # only take the first matching key per row
 
-        st.session_state["last_result_entities"] = entities
-
+        st.session_state["last_result_entities"] = named_entities
 
         return cleaned_response
+
     except Exception as e:
         return f"Error formatting response: {e}"
 
@@ -257,13 +259,13 @@ def gemini_direct_answer(prompt, chat_context=None):
         colnames = ", ".join(columns) if columns else "none"
 
         entities_info = ""
-        if "last_result_entities" in st.session_state and st.session_state["last_result_entities"]:
-            top_entities = ", ".join(st.session_state["last_result_entities"][:5])
-            entities_info = f"\nThe last result included key values such as: {top_entities}."
+    if "last_result_entities" in st.session_state and st.session_state["last_result_entities"]:
+        top_entities = ", ".join(st.session_state["last_result_entities"][:5])
+        entities_info = f"\nThe last result compared the following entities: {top_entities}."
 
         result_context = f"""
-            The last structured query came from the question: '{last_user_q}'.
-            It returned the following columns: {colnames}.{entities_info}
+        The last structured query came from the question: '{last_user_q}'.
+        It returned the following columns: {colnames}.{entities_info}
 
 Sample of the data:
 {preview}
@@ -273,6 +275,11 @@ Sample of the data:
 
     full_prompt = f"""
 You are a helpful conversational assistant. Use the conversation history and the result context to understand what the user is referring to.
+If the user asks “which one is better?”, refer to the **last comparison** of named rows (such as films or products).
+If multiple entities were shown (like two film titles), compare them using the available metric (e.g., revenue, rental count).
+Do not answer using unrelated records like top-grossing items unless explicitly asked.
+
+Always use the most recent structured result as anchor unless the new question starts a new topic.
 
 Important:
 - If the user says things like "this data", "that table", "filter this", etc., refer to the **most recent structured query output** (columns and context).

@@ -242,5 +242,12 @@ if st.session_state.chat_history and st.session_state.chat_history[-1]['response
     st.session_state.pending_prompt = follow_up or ""
     st.rerun()
 
+# Show debug log in sidebar
+if 'debug_log' in st.session_state and st.session_state['debug_log']:
+    st.sidebar.markdown('---')
+    st.sidebar.subheader('Debug Log')
+    for msg in st.session_state['debug_log'][-10:]:  # Show last 10 messages
+        st.sidebar.write(msg)
+
 st.markdown("<br><br><br><br><br>", unsafe_allow_html=True)
 
