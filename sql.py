@@ -16,11 +16,13 @@ def get_connection():
 
 def run_query(query):
     try:
+        print(f"\n[DEBUG] SQL Query: {query}\n")
         conn = get_connection()
         cur = conn.cursor()
         cur.execute(query)
         rows = cur.fetchall()
         columns = [desc[0] for desc in cur.description]
+        print(f"[DEBUG] Rows returned: {len(rows)}\n")
         cur.close()
         conn.close()
         return columns, rows
