@@ -1,4 +1,4 @@
- // Chat functionality
+// Chat functionality
         const chatContainer = document.getElementById('chatContainer');
         const chatMessages = document.getElementById('chatMessages');
         const welcomeScreen = document.getElementById('welcomeScreen');
@@ -124,19 +124,7 @@
                 wrapper.appendChild(table);
             });
             messageContent.appendChild(messageText);
-            if (sender === 'bot') {
-                const actions = document.createElement('div');
-                actions.className = 'message-actions';
-                actions.innerHTML = `
-                    <button class="message-action" onclick="copyMessage(this)">
-                        <i class="fas fa-copy"></i> Copy
-                    </button>
-                    <button class="message-action" onclick="likeMessage(this)">
-                        <i class="fas fa-thumbs-up"></i> Like
-                    </button>
-                `;
-                messageContent.appendChild(actions);
-            }
+            // Removed message-actions (copy/like) for bot messages
             messageDiv.appendChild(avatar);
             messageDiv.appendChild(messageContent);
             chatMessages.appendChild(messageDiv);
@@ -307,26 +295,6 @@ LIMIT 10;</pre>
                 });
                 suggestions.appendChild(suggestionBtn);
             });
-        }
-
-        function copyMessage(btn) {
-            const messageText = btn.closest('.message-content').querySelector('.message-text').textContent;
-            navigator.clipboard.writeText(messageText).then(() => {
-                showNotification('Message copied to clipboard');
-            });
-        }
-
-        function likeMessage(btn) {
-            const icon = btn.querySelector('i');
-            if (icon.classList.contains('fas')) {
-                icon.classList.remove('fas');
-                icon.classList.add('far');
-                showNotification('Feedback removed');
-            } else {
-                icon.classList.remove('far');
-                icon.classList.add('fas');
-                showNotification('Thanks for your feedback!');
-            }
         }
 
         function showNotification(message) {

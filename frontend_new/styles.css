@@ -271,47 +271,37 @@
         .message-text {
             line-height: 1.6;
             font-size: 15px;
-            overflow-x: auto;
+            overflow-x: unset;
             max-width: 100%;
+            word-break: break-word;
+            white-space: pre-line;
         }
 
-        .message-text pre {
-            background: #e3f2fd;
-            border: 1px solid var(--light-border);
-            border-radius: 8px;
-            padding: 12px;
-            margin: 12px 0;
-            overflow-x: auto;
-            font-size: 14px;
-        }
-
+        /* Table horizontal scroll only */
         .table-responsive {
+            display: block;
             overflow-x: auto;
+            width: 100%;
             max-width: 100%;
-            border-radius: 8px;
-            margin: 12px 0;
         }
 
         .message-text table {
-            width: 100% !important;
-            border-collapse: separate !important;
-            border-spacing: 0 !important;
-            background: #f8fbff !important;
-            border-radius: 12px !important;
-            box-shadow: 0 2px 8px rgba(25, 118, 210, 0.07) !important;
-            margin: 16px 0 !important;
-            min-width: 300px; /* Ensure tables don't get too narrow */
+            min-width: 1200px; /* Make table much wider for horizontal scroll */
+            width: max-content !important;
+            table-layout: auto !important;
+            display: table;
+            overflow-x: unset;
         }
+
         .message-text th,
         .message-text td {
-            padding: 18px 20px !important;
-            text-align: left !important;
-            border-bottom: 1px solid #e3eaf3 !important;
-            font-size: 15px !important;
-            word-break: break-word;
-            max-width: 320px;
+            min-width: 180px;
+            max-width: 400px;
+            padding: 20px 28px !important;
             white-space: normal !important;
+            word-break: break-word;
             line-height: 1.7;
+            height: auto;
         }
 
         /* Allow table cells to expand vertically for long content */
@@ -347,14 +337,6 @@
 
         .message-text table {
             box-shadow: 0 2px 12px rgba(25, 118, 210, 0.08) !important;
-        }
-
-        .message-actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 12px;
-            opacity: 0;
-            transition: var(--transition);
         }
 
         .message:hover .message-actions {
