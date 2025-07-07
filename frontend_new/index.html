@@ -240,6 +240,8 @@
         .message-text {
             line-height: 1.6;
             font-size: 15px;
+            overflow-x: auto;
+            max-width: 100%;
         }
 
         .message-text pre {
@@ -253,24 +255,49 @@
         }
 
         .message-text table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 12px 0;
-            border-radius: 8px;
-            overflow: hidden;
+            width: 100% !important;
+            border-collapse: separate !important;
+            border-spacing: 0 !important;
+            background: #f8fbff !important;
+            border-radius: 12px !important;
+            overflow: hidden !important;
+            box-shadow: 0 2px 8px rgba(25, 118, 210, 0.07) !important;
+            margin: 16px 0 !important;
+            display: block;
+            max-width: 100%;
         }
 
         .message-text th,
         .message-text td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid var(--light-border);
+            padding: 14px 16px !important;
+            text-align: left !important;
+            border-bottom: 1px solid #e3eaf3 !important;
+            font-size: 15px !important;
+            word-break: break-word;
+            max-width: 220px;
         }
 
         .message-text th {
-            background: #e3f2fd;
-            font-weight: 600;
-            color: var(--primary);
+            background: linear-gradient(90deg, #1976d2 0%, #64b5f6 100%) !important;
+            color: #fff !important;
+            font-weight: 600 !important;
+            border-bottom: 2px solid #1976d2 !important;
+        }
+
+        .message-text tr:last-child td {
+            border-bottom: none !important;
+        }
+
+        .message-text td {
+            background: #fff !important;
+        }
+
+        .message-text tr:nth-child(even) td {
+            background: #f3f7fa !important;
+        }
+
+        .message-text table {
+            box-shadow: 0 2px 12px rgba(25, 118, 210, 0.08) !important;
         }
 
         .message-actions {
@@ -656,6 +683,7 @@
         <span id="notificationText"></span>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script>
         // Chat functionality
         const chatContainer = document.getElementById('chatContainer');
@@ -763,25 +791,23 @@
         function addMessage(content, sender, isHtml = false) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${sender}`;
-            
             const avatar = document.createElement('div');
             avatar.className = `message-avatar ${sender}`;
             avatar.innerHTML = sender === 'user' ? '<i class="fas fa-user"></i>' : '<i class="fas fa-robot"></i>';
-            
             const messageContent = document.createElement('div');
             messageContent.className = 'message-content';
-            
             const messageText = document.createElement('div');
             messageText.className = 'message-text';
-            
             if (isHtml) {
+                // If already HTML, just insert
                 messageText.innerHTML = content;
+            } else if (sender === 'bot') {
+                // Convert markdown to HTML for bot messages
+                messageText.innerHTML = marked.parse(content);
             } else {
                 messageText.textContent = content;
             }
-            
             messageContent.appendChild(messageText);
-            
             if (sender === 'bot') {
                 const actions = document.createElement('div');
                 actions.className = 'message-actions';
@@ -795,13 +821,10 @@
                 `;
                 messageContent.appendChild(actions);
             }
-            
             messageDiv.appendChild(avatar);
             messageDiv.appendChild(messageContent);
-            
             chatMessages.appendChild(messageDiv);
             chatContainer.scrollTop = chatContainer.scrollHeight;
-            
             // Store in history
             chatHistory.push({ sender, content, timestamp: new Date() });
         }
