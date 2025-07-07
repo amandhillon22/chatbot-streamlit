@@ -254,19 +254,19 @@
             font-size: 14px;
         }
 
+        .table-responsive {
+            overflow-x: auto;
+            max-width: 100%;
+        }
         .message-text table {
             width: 100% !important;
             border-collapse: separate !important;
             border-spacing: 0 !important;
             background: #f8fbff !important;
             border-radius: 12px !important;
-            overflow: hidden !important;
             box-shadow: 0 2px 8px rgba(25, 118, 210, 0.07) !important;
             margin: 16px 0 !important;
-            display: block;
-            max-width: 100%;
         }
-
         .message-text th,
         .message-text td {
             padding: 14px 16px !important;
@@ -798,15 +798,18 @@
             messageContent.className = 'message-content';
             const messageText = document.createElement('div');
             messageText.className = 'message-text';
-            if (isHtml) {
-                // If already HTML, just insert
-                messageText.innerHTML = content;
-            } else if (sender === 'bot') {
-                // Convert markdown to HTML for bot messages
+            if (sender === 'bot') {
                 messageText.innerHTML = marked.parse(content);
             } else {
                 messageText.textContent = content;
             }
+            // Wrap tables in .table-responsive for horizontal scroll
+            messageText.querySelectorAll('table').forEach(table => {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'table-responsive';
+                table.parentNode.insertBefore(wrapper, table);
+                wrapper.appendChild(table);
+            });
             messageContent.appendChild(messageText);
             if (sender === 'bot') {
                 const actions = document.createElement('div');
