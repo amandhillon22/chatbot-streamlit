@@ -39,8 +39,12 @@
             min-height: 100vh;
             display: flex;
             flex-direction: column;
-            overflow: hidden;
             position: relative;
+        }
+
+        /* Smooth scrolling for the entire page */
+        html {
+            scroll-behavior: smooth;
         }
 
         body::before {
@@ -94,29 +98,50 @@
 
         /* Main container */
         .main-container {
-            flex: 1;
+            flex: 1 1 auto;
             display: flex;
             flex-direction: column;
-            position: relative;
-            overflow: hidden;
+            min-height: 0; /* Allow children to shrink */
         }
 
         /* Chat container */
         .chat-container {
-            flex: 1;
+            flex: 1 1 auto;
+            min-height: 0;
+            height: auto;
             padding: 24px;
             overflow-y: auto;
+            overflow-x: hidden;
             scroll-behavior: smooth;
             position: relative;
         }
 
+        /* Enhanced scrollbar styling */
         .chat-container::-webkit-scrollbar {
-            width: 6px;
+            width: 8px;
+        }
+
+        .chat-container::-webkit-scrollbar-track {
+            background: transparent;
+            border-radius: 4px;
         }
 
         .chat-container::-webkit-scrollbar-thumb {
             background: var(--light-border);
-            border-radius: 3px;
+            border-radius: 4px;
+            border: 2px solid transparent;
+            background-clip: padding-box;
+        }
+
+        .chat-container::-webkit-scrollbar-thumb:hover {
+            background: var(--primary);
+            background-clip: padding-box;
+        }
+
+        /* Firefox scrollbar */
+        .chat-container {
+            scrollbar-width: thin;
+            scrollbar-color: var(--light-border) transparent;
         }
 
         /* Welcome screen */
@@ -159,9 +184,13 @@
 
         /* Chat messages */
         .chat-messages {
-            max-width: 800px;
+            max-width: 1100px;
             margin: 0 auto;
             width: 100%;
+            min-height: 100%;
+            display: flex;
+            flex-direction: column;
+            padding-bottom: 20px;
         }
 
         .message {
@@ -257,7 +286,10 @@
         .table-responsive {
             overflow-x: auto;
             max-width: 100%;
+            border-radius: 8px;
+            margin: 12px 0;
         }
+
         .message-text table {
             width: 100% !important;
             border-collapse: separate !important;
@@ -266,6 +298,7 @@
             border-radius: 12px !important;
             box-shadow: 0 2px 8px rgba(25, 118, 210, 0.07) !important;
             margin: 16px 0 !important;
+            min-width: 300px; /* Ensure tables don't get too narrow */
         }
         .message-text th,
         .message-text td {
@@ -377,7 +410,7 @@
         }
 
         .input-container {
-            max-width: 800px;
+            max-width: 1100px;
             margin: 0 auto;
             position: relative;
         }
@@ -498,6 +531,8 @@
             }
             .chat-container {
                 padding: 16px;
+                height: calc(100vh - 120px);
+                max-height: calc(100vh - 120px);
             }
             .input-area {
                 padding: 16px;
@@ -528,6 +563,8 @@
             }
             .chat-container {
                 padding: 8px;
+                height: calc(100vh - 100px);
+                max-height: calc(100vh - 100px);
             }
             .chat-messages {
                 max-width: 100%;
@@ -582,6 +619,10 @@
             }
             .logo i {
                 font-size: 16px;
+            }
+            .chat-container {
+                height: calc(100vh - 90px);
+                max-height: calc(100vh - 90px);
             }
             .message-content {
                 padding: 7px 6px;
@@ -827,9 +868,65 @@
             messageDiv.appendChild(avatar);
             messageDiv.appendChild(messageContent);
             chatMessages.appendChild(messageDiv);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
+            
+            // Smooth scroll to bottom with animation
+            scrollToBottom();
+            
             // Store in history
             chatHistory.push({ sender, content, timestamp: new Date() });
+        }
+
+        function scrollToBottom() {
+            // Use requestAnimationFrame for smooth scrolling
+            requestAnimationFrame(() => {
+                chatContainer.scrollTo({
+                    top: chatContainer.scrollHeight,
+                    behavior: 'smooth'
+                });
+            });
+        }
+
+        function scrollToTop() {
+            chatContainer.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        }
+
+        // Add scroll to top button functionality
+        function addScrollToTopButton() {
+            const scrollBtn = document.createElement('button');
+            scrollBtn.innerHTML = '<i class="fas fa-arrow-up"></i>';
+            scrollBtn.className = 'scroll-to-top';
+            scrollBtn.style.cssText = `
+                position: fixed;
+                bottom: 100px;
+                right: 20px;
+                width: 45px;
+                height: 45px;
+                border-radius: 50%;
+                background: var(--primary-gradient);
+                color: white;
+                border: none;
+                cursor: pointer;
+                display: none;
+                z-index: 1000;
+                transition: var(--transition);
+                box-shadow: var(--shadow-lg);
+            `;
+            scrollBtn.onclick = scrollToTop;
+            document.body.appendChild(scrollBtn);
+
+            // Show/hide scroll to top button
+            chatContainer.addEventListener('scroll', () => {
+                if (chatContainer.scrollTop > 300) {
+                    scrollBtn.style.display = 'flex';
+                    scrollBtn.style.alignItems = 'center';
+                    scrollBtn.style.justifyContent = 'center';
+                } else {
+                    scrollBtn.style.display = 'none';
+                }
+            });
         }
 
         function showTypingIndicator() {
@@ -854,7 +951,7 @@
             `;
             
             chatMessages.appendChild(typingDiv);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
+            scrollToBottom();
         }
 
         function hideTypingIndicator() {
@@ -970,6 +1067,22 @@ LIMIT 10;</pre>
 
         // Initialize
         updateSuggestions(['Show me all tables', 'Top performing products', 'Recent activity summary']);
+        
+        // Add scroll to top button
+        addScrollToTopButton();
+        
+        // Add keyboard shortcut for scroll to top (Ctrl + Home)
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'Home') {
+                e.preventDefault();
+                scrollToTop();
+            }
+            // Scroll to bottom (Ctrl + End)
+            if (e.ctrlKey && e.key === 'End') {
+                e.preventDefault();
+                scrollToBottom();
+            }
+        });
     </script>
 </body>
 </html>
