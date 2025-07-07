@@ -65,7 +65,6 @@ ENV/
 
 # Streamlit
 .streamlit/
-
 # Database
 *.sqlite3
 *.db
