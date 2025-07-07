@@ -5,33 +5,27 @@ import re
 from dotenv import load_dotenv
 import datetime
 from decimal import Decimal
+from sql import get_full_schema
 
 load_dotenv()
 
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 model = genai.GenerativeModel("gemini-2.5-flash")
 
-SCHEMAS = {
-    "public": """
-    Tables in Pagila:
-
-    - public.actor(actor_id, first_name, last_name, last_update)
-    - public.address(address_id, address, address2, district, city_id, postal_code, phone, last_update)
-    - public.category(category_id, name, last_update)
-    - public.city(city_id, city, country_id, last_update)
-    - public.country(country_id, country, last_update)
-    - public.customer(customer_id, store_id, first_name, last_name, email, address_id, activebool, create_date, last_update, active)
-    - public.film(film_id, title, description, release_year, language_id, rental_duration, rental_rate, length, replacement_cost, rating, last_update, special_features, fulltext)
-    - public.film_actor(actor_id, film_id, last_update)
-    - public.film_category(film_id, category_id, last_update)
-    - public.inventory(inventory_id, film_id, store_id, last_update)
-    - public.language(language_id, name, last_update)
-    - public.payment(payment_id, customer_id, staff_id, rental_id, amount, payment_date)
-    - public.rental(rental_id, rental_date, inventory_id, customer_id, return_date, staff_id, last_update)
-    - public.staff(staff_id, first_name, last_name, address_id, email, store_id, active, username, password, last_update, picture)
-    - public.store(store_id, manager_staff_id, address_id, last_update)
+def schema_dict_to_prompt(schema_dict):
     """
-}
+    Converts the schema dictionary to a readable string for LLM prompt.
+    """
+    lines = []
+    for schema_name, tables in schema_dict.items():
+        lines.append(f"Schema: {schema_name}")
+        for table, columns in tables.items():
+            lines.append(f"- {schema_name}.{table}({', '.join(columns)})")
+    return '\n'.join(lines)
+
+# Dynamically fetch schema at import time
+SCHEMA_DICT = get_full_schema()
+SCHEMA_PROMPT = schema_dict_to_prompt(SCHEMA_DICT)
 
 def extract_json(response):
     try:
@@ -68,7 +62,7 @@ def english_to_sql(prompt, chat_context=None):
         for entry in reversed(chat_context.history):
             history_text += f"User: {entry['user']}\nBot: {entry.get('response', '')}\n"
 
-    schema_text = "\n\n".join([f"Schema ({name}):\n{definition}" for name, definition in SCHEMAS.items()])
+    schema_text = SCHEMA_PROMPT
 
     full_prompt = f"""
 You are an intelligent SQL assistant for multiple PostgreSQL schemas.
@@ -161,33 +155,23 @@ def generate_final_response(user_question, columns, rows, chat_context=None):
     formatted_data = json.dumps(rows_json, separators=(',', ':'))
 
     formatting_prompt = f"""
-You are a helpful assistant. Given the user's question and the database results in JSON, return a clean, readable answer.
+You are a helpful assistant. Given the user's question and the database results in JSON, generate the most natural, clear, and helpful answer for the user.
 
-IMPORTANT:
-- You must base your answer strictly on the exact keys and values provided in the JSON.
-- Do not assume missing data or exclude fields unless they are truly absent.
-- If 'first_name' and 'last_name' are present, use both.
-- Do not generalize based on partial values.
-- Do not say “no data available” unless you're sure the previous result had no relevant entity.
-
-If the user question includes words like pie chart, bar chart, line chart, plot, or visualize:
-- Do NOT attempt to convert or assume chart data.
-- Instead, politely respond that visual/chart-based outputs are not available here.
-
-- ALWAYS present the result as a markdown table, no matter how many columns or rows there are.
-- The table should have column headers matching the keys in the JSON, and each row should represent one record.
-- Do NOT use bullet lists or summary sentences, always use a markdown table.
-- Avoid blank lines before tables.
-- Avoid having unnecessary extra spaces between your answers or line breaks between words.
-- Make sure that the answers always have a proper structure. Do NOT give an unstructured answer.
+Instructions:
+- If the answer can be given in natural language, do so.
+- Only use a markdown table if it is truly necessary for clarity (e.g., multiple rows or columns that cannot be summarized naturally).
+- If the answer is a single value or can be summarized in a sentence, prefer natural language.
+- If there is no data, politely state that no relevant data was found.
+- Do not mention table or column names in your explanation or answer.
+- Be concise, friendly, and clear.
 
 User Question:
 {user_question}
 
-Database Results:
+Database Results (as JSON):
 {formatted_data}
 
-Return the answer as a markdown table only:
+Return your answer in the most appropriate format as described above.
 """
 
     try:

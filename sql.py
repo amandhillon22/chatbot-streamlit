@@ -9,8 +9,8 @@ load_dotenv()
 def get_connection():
     return psycopg2.connect(
         host=os.getenv("hostname", "localhost"),
-        dbname=os.getenv("dbname", "dvdrental"),
-        user=os.getenv("user_name", "postgres"),
+        dbname=os.getenv("dbname", "pagila"),
+        user=os.getenv("user_name", "support"),
         password=os.getenv("password", "Akshit@123"),
         port=5432
     )
@@ -145,3 +145,41 @@ def fix_all_encoding_issues(corruption_regex="Ã|â€™|â€“|â€œ|â€
             fix_encoding_for_column(schema, table, column, id_column, corruption_regex)
         else:
             print(f"Skipping {schema}.{table} - no suitable primary key found.")
+
+def get_full_schema():
+    """
+    Returns a dictionary of all tables and their columns for all user schemas.
+    Example: { 'public': { 'film': ['film_id', 'title', ...], ... }, ... }
+    """
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT table_schema, table_name, column_name
+            FROM information_schema.columns
+            WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
+            ORDER BY table_schema, table_name, ordinal_position
+        """)
+        schema = {}
+        for table_schema, table_name, column_name in cur.fetchall():
+            if table_schema not in schema:
+                schema[table_schema] = {}
+            if table_name not in schema[table_schema]:
+                schema[table_schema][table_name] = []
+            schema[table_schema][table_name].append(column_name)
+        cur.close()
+        conn.close()
+        return schema
+    except Exception as e:
+        print("❌ Failed to fetch schema:", e)
+        return {}
+
+def print_schema(schema):
+    for schema_name, tables in schema.items():
+        print(f"Schema: {schema_name}")
+        for table, columns in tables.items():
+            print(f"  Table: {table} (" + ", ".join(columns) + ")")
+
+if __name__ == "__main__":
+    schema = get_full_schema()
+    print_schema(schema)
