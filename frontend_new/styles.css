@@ -300,13 +300,18 @@
 
         .message-text th,
         .message-text td {
-            min-width: 180px;
-            max-width: 400px;
-            padding: 20px 28px !important;
-            white-space: normal !important;
-            word-break: break-word;
-            line-height: 1.7;
-            height: auto;
+            color: #111 !important;
+            background: transparent !important;
+        }
+
+        .message-text td {
+            color: #111 !important;
+            background: #fff !important;
+        }
+
+        .message-text th {
+            color: #fff !important;
+            background: linear-gradient(90deg, #1976d2 0%, #64b5f6 100%) !important;
         }
 
         /* Allow table cells to expand vertically for long content */
