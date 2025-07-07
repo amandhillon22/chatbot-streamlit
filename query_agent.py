@@ -158,12 +158,14 @@ def generate_final_response(user_question, columns, rows, chat_context=None):
 You are a helpful assistant. Given the user's question and the database results in JSON, generate the most natural, clear, and helpful answer for the user.
 
 Instructions:
+- If the user asks to reformat, summarize, or present the previous data in a different way (such as 'show as table', 'show as list', 'summarize', etc.), always use the most recent data/results available, not just the new user question.
 - If the answer can be given in natural language, do so.
 - Only use a markdown table if it is truly necessary for clarity (e.g., multiple rows or columns that cannot be summarized naturally).
 - If the answer is a single value or can be summarized in a sentence, prefer natural language.
 - If there is no data, politely state that no relevant data was found.
 - Do not mention table or column names in your explanation or answer.
 - Be concise, friendly, and clear.
+- If the user asks for a table, always present the data as a markdown table, even if it was previously shown in another format.
 
 User Question:
 {user_question}
