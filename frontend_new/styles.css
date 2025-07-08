@@ -4,15 +4,15 @@
             --accent: #2196f3;
             --accent-gradient: linear-gradient(135deg, #2196f3 0%, #64b5f6 100%);
             --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-            --light-bg: #fff;
-            --light-surface: #fff;
-            --light-surface-elevated: #f5f7fa;
-            --light-border: #e0e0e0;
-            --light-text: #1a1a1a;
-            --light-text-secondary: #666;
-            --shadow-sm: 0 2px 8px rgba(0,0,0,0.06);
-            --shadow-md: 0 4px 20px rgba(0,0,0,0.08);
-            --shadow-lg: 0 8px 40px rgba(0,0,0,0.10);
+            --dark-bg: #11131a;
+            --dark-surface: #181a20;
+            --dark-surface-elevated: #232634;
+            --dark-border: #23263a;
+            --dark-text: #f5f7fa;
+            --dark-text-secondary: #b0b8c1;
+            --shadow-sm: 0 2px 8px rgba(0,0,0,0.16);
+            --shadow-md: 0 4px 20px rgba(0,0,0,0.18);
+            --shadow-lg: 0 8px 40px rgba(0,0,0,0.22);
             --border-radius: 12px;
             --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
@@ -25,8 +25,8 @@
 
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--light-bg);
-            color: var(--light-text);
+            background: var(--dark-bg) !important;
+            color: var(--dark-text) !important;
             min-height: 100vh;
             display: flex;
             flex-direction: column;
@@ -57,8 +57,8 @@
             align-items: center;
             justify-content: space-between;
             padding: 20px 24px;
-            background: var(--light-surface);
-            border-bottom: 1px solid var(--light-border);
+            background: var(--dark-surface) !important;
+            border-bottom: 1px solid var(--dark-border) !important;
             position: fixed;
             top: 0;
             left: 0;
@@ -97,9 +97,10 @@
             display: flex;
             flex-direction: column;
             min-height: 0;
-            /* Add top and bottom padding to prevent overlap with fixed header/input */
             padding-top: 72px;
             padding-bottom: 96px;
+            background: var(--dark-bg) !important;
+            box-sizing: border-box;
         }
 
         /* Blue gradient ball blur background */
@@ -120,14 +121,16 @@
         .chat-container {
             flex: 1 1 auto;
             min-height: 0;
-            height: auto;
-            padding: 24px 0;
+            height: calc(100vh - 72px - 96px); /* header height + input area height */
+            max-height: calc(100vh - 72px - 96px);
+            padding: 0;
             overflow-y: auto;
             overflow-x: auto;
             /* Ensures horizontal scroll if content overflows */
             scroll-behavior: smooth;
             position: relative;
-            background: #111 !important;
+            background: var(--dark-bg) !important;
+            box-sizing: border-box;
         }
 
         /* Enhanced scrollbar styling */
@@ -168,6 +171,8 @@
             text-align: center;
             max-width: 600px;
             margin: 0 auto;
+            background: transparent !important;
+            color: var(--dark-text) !important;
         }
 
         .welcome-icon {
@@ -191,7 +196,7 @@
 
         .welcome-subtitle {
             font-size: 18px;
-            color: var(--light-text-secondary);
+            color: var(--dark-text-secondary) !important;
             margin-bottom: 32px;
             line-height: 1.5;
         }
@@ -208,6 +213,7 @@
             white-space: pre;
             overflow-x: auto;
             /* Prevents message cells from being compressed and allows horizontal scroll */
+            background: transparent !important;
         }
 
         .message {
@@ -254,21 +260,21 @@
             background: transparent !important;
             border: none !important;
             box-shadow: none !important;
-            color: #fff !important;
+            color: var(--dark-text) !important;
             border-radius: 0 !important;
             padding: 0 0 0 0 !important;
         }
 
         .message.user .message-content {
-            background: #222 !important;
-            color: #fff !important;
+            background: var(--dark-surface-elevated) !important;
+            color: var(--dark-text) !important;
             border-radius: 18px !important;
             padding: 16px 20px !important;
-            border: 1px solid #333 !important;
+            border: 1px solid var(--dark-border) !important;
         }
 
         .message.bot .message-content {
-            color: #fff !important;
+            color: var(--dark-text) !important;
             background: transparent !important;
             border: none !important;
             border-radius: 0 !important;
@@ -276,7 +282,7 @@
         }
 
         .message-text {
-            color: #fff !important;
+            color: var(--dark-text) !important;
             background: transparent !important;
             word-break: break-word;
             white-space: pre-line;
@@ -291,27 +297,57 @@
         }
 
         .message-text table {
-            min-width: 1200px; /* Make table much wider for horizontal scroll */
-            width: max-content !important;
-            table-layout: auto !important;
-            display: table;
-            overflow-x: unset;
+            background: transparent !important;
+            border-collapse: collapse !important;
+            border-spacing: 0 !important;
+            width: 100% !important;
+            min-width: 600px;
+            box-shadow: none !important;
         }
 
         .message-text th,
         .message-text td {
-            color: #111 !important;
             background: transparent !important;
-        }
-
-        .message-text td {
-            color: #111 !important;
-            background: #fff !important;
+            color: #fff !important;
+            border: none !important;
+            border-bottom: 1px solid rgba(255,255,255,0.18) !important;
+            padding: 16px 18px !important;
+            font-size: 15px !important;
+            font-weight: 400;
         }
 
         .message-text th {
-            color: #fff !important;
+            font-weight: 600 !important;
+            color: #90caf9 !important;
+            border-bottom: 2px solid #1976d2 !important;
+            background: transparent !important;
+        }
+
+        .message-text tr:last-child td {
+            border-bottom: none !important;
+        }
+
+        .message-text tr:nth-child(even) td {
+            background: transparent !important;
+        }
+
+        /* Table row hover effect */
+        .message-text tr:hover {
+            background: rgba(255, 255, 255, 0.05) !important;
+        }
+
+        /* Table cell padding and alignment */
+        .message-text td {
+            padding: 12px 16px !important;
+            vertical-align: middle !important;
+        }
+
+        /* Table header styling */
+        .message-text th {
             background: linear-gradient(90deg, #1976d2 0%, #64b5f6 100%) !important;
+            color: #fff !important;
+            font-weight: 600 !important;
+            border-bottom: 2px solid #1976d2 !important;
         }
 
         /* Allow table cells to expand vertically for long content */
@@ -338,11 +374,11 @@
         }
 
         .message-text td {
-            background: #fff !important;
+            background: var(--dark-bg) !important;
         }
 
         .message-text tr:nth-child(even) td {
-            background: #f3f7fa !important;
+            background: var(--dark-surface) !important;
         }
 
         .message-text table {
@@ -412,8 +448,8 @@
         /* Input area */
         .input-area {
             padding: 24px 0;
-            background: var(--light-surface);
-            border-top: 1px solid var(--light-border);
+            background: var(--dark-surface) !important;
+            border-top: 1px solid var(--dark-border) !important;
             position: fixed;
             left: 0;
             right: 0;
@@ -431,8 +467,8 @@
             display: flex;
             align-items: flex-end;
             gap: 12px;
-            background: var(--light-surface-elevated);
-            border: 2px solid var(--light-border);
+            background: var(--dark-surface-elevated) !important;
+            border: 2px solid var(--dark-border) !important;
             border-radius: 24px;
             padding: 16px 20px;
             transition: var(--transition);
@@ -440,8 +476,8 @@
         }
 
         .input-wrapper:focus-within {
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px #e3f2fd;
+            border-color: var(--primary) !important;
+            box-shadow: 0 0 0 3px #1a233a !important;
         }
 
         .input-field {
@@ -449,7 +485,7 @@
             background: none;
             border: none;
             outline: none;
-            color: var(--light-text);
+            color: var(--dark-text) !important;
             font-size: 16px;
             line-height: 1.5;
             resize: none;
@@ -460,7 +496,7 @@
         }
 
         .input-field::placeholder {
-            color: var(--light-text-secondary);
+            color: var(--dark-text-secondary) !important;
         }
 
         .input-actions {
@@ -506,7 +542,7 @@
         }
 
         .send-btn:disabled {
-            background: var(--light-border);
+            background: var(--dark-border) !important;
             cursor: not-allowed;
             transform: none;
         }
@@ -517,23 +553,24 @@
             gap: 8px;
             margin-bottom: 16px;
             flex-wrap: wrap;
+            background: transparent !important;
         }
 
         .suggestion {
-            background: var(--light-surface);
-            border: 1px solid var(--light-border);
+            background: var(--dark-surface) !important;
+            border: 1px solid var(--dark-border) !important;
             border-radius: 20px;
             padding: 8px 16px;
             cursor: pointer;
             transition: var(--transition);
             font-size: 14px;
             white-space: nowrap;
-            color: var(--primary);
+            color: var(--primary) !important;
         }
 
         .suggestion:hover {
-            background: #e3f2fd;
-            border-color: var(--primary);
+            background: #1a233a !important;
+            border-color: var(--primary) !important;
         }
 
         /* Responsive design */
@@ -686,8 +723,8 @@
             position: fixed;
             top: 20px;
             right: 20px;
-            background: var(--success-gradient);
-            color: white;
+            background: var(--success-gradient) !important;
+            color: #fff !important;
             padding: 12px 20px;
             border-radius: 8px;
             box-shadow: var(--shadow-lg);
