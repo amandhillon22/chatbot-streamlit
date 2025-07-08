@@ -287,7 +287,7 @@
             white-space: pre-line;
         }
 
-        /* Table horizontal scroll only */
+        /* --- TABLE STYLES CLEANUP --- */
         .table-responsive {
             display: block;
             overflow-x: auto;
@@ -299,38 +299,51 @@
             background: transparent !important;
             border-collapse: collapse !important;
             border-spacing: 0 !important;
-            width: 100% !important;
-            min-width: 600px;
-            box-shadow: none !important;
+            width: auto !important;
+            min-width: max-content !important;
+            box-shadow: 0 2px 12px rgba(25, 118, 210, 0.08) !important;
+            table-layout: auto !important;
         }
 
         .message-text th,
         .message-text td {
-            background: transparent !important;
+            white-space: nowrap !important;
             color: #fff !important;
-            border: none !important;
             border-bottom: 1px solid rgba(255,255,255,0.18) !important;
             padding: 16px 18px !important;
             font-size: 15px !important;
             font-weight: 400;
+            background: transparent !important;
+            border: none !important;
         }
 
         .message-text th {
             font-weight: 600 !important;
             color: #90caf9 !important;
             border-bottom: 2px solid #1976d2 !important;
-            background: transparent !important;
+            background: linear-gradient(90deg, #1976d2 0%, #64b5f6 100%) !important;
+        }
+
+        .message-text td {
+            min-height: 48px;
+            height: auto;
+            vertical-align: top;
+            background: var(--dark-bg) !important;
+            padding: 12px 16px !important;
+        }
+
+        .message-text tr:nth-child(even) td {
+            background: var(--dark-surface) !important;
         }
 
         .message-text tr:last-child td {
             border-bottom: none !important;
         }
 
-        .message-text tr:nth-child(even) td {
-            background: transparent !important;
+        .message-text tr {
+            height: auto !important;
         }
 
-        /* Table row hover effect */
         .message-text tr:hover {
             background: rgba(255, 255, 255, 0.05) !important;
         }
