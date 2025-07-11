@@ -315,6 +315,7 @@
             font-weight: 400;
             background: transparent !important;
             border: none !important;
+            text-align: center !important;
         }
 
         .message-text th {
@@ -356,10 +357,11 @@
 
         /* Table header styling */
         .message-text th {
-            background: linear-gradient(90deg, #1976d2 0%, #64b5f6 100%) !important;
+            background: transparent !important;
             color: #fff !important;
             font-weight: 600 !important;
-            border-bottom: 2px solid #1976d2 !important;
+            border-bottom: .5px solid #fff !important;
+            border-top: .5px solid #fff !important;
         }
 
         /* Allow table cells to expand vertically for long content */
@@ -375,10 +377,10 @@
         }
 
         .message-text th {
-            background: linear-gradient(90deg, #1976d2 0%, #64b5f6 100%) !important;
+            background: transparent !important;
             color: #fff !important;
             font-weight: 600 !important;
-            border-bottom: 2px solid #1976d2 !important;
+            border-bottom: 2px solid #fff !important;
         }
 
         .message-text tr:last-child td {
