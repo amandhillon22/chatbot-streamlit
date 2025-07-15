@@ -4,8 +4,8 @@ import psycopg2
 def get_connection():
     return psycopg2.connect(
         host=os.getenv("hostname", "localhost"),
-        dbname=os.getenv("dbname", "pagila"),
-        user=os.getenv("user_name", "support"),
+        dbname=os.getenv("dbname", "rdc_dump"),
+        user=os.getenv("user_name", "postgres"),
         password=os.getenv("password", "Akshit@123"),
         port=5432
     )
@@ -98,27 +98,6 @@ def generate_markdown():
                 markdown += f"- `{index[0]}`: {index[1]}\n"
         else:
             markdown += "- None\n"
-
-        # Full data
-        markdown += "\n### 📄 Full Table Data\n"
-        try:
-            cursor.execute(f"SELECT * FROM {table_name};")
-            rows = cursor.fetchall()
-            col_names = [desc[0] for desc in cursor.description]
-
-            if rows:
-                markdown += "| " + " | ".join(col_names) + " |\n"
-                markdown += "| " + " | ".join("---" for _ in col_names) + " |\n"
-                for row in rows:
-                    row_str = [str(item) if item is not None else "NULL" for item in row]
-                    markdown += "| " + " | ".join(row_str) + " |\n"
-            else:
-                markdown += "_No data available._\n"
-
-        except Exception as e:
-            markdown += f"_Error fetching data: {e}_\n"
-
-        markdown += "\n---\n\n"
 
     cursor.close()
     conn.close()

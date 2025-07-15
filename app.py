@@ -1,5 +1,5 @@
 import streamlit as st
-from query_agent import english_to_sql, generate_final_response, gemini_direct_answer
+from query_agent import english_to_sql, generate_final_response, gemini_direct_answer, validate_sql_query
 from sql import run_query
 from decimal import Decimal
 import markdown
@@ -213,17 +213,26 @@ if st.session_state.chat_history and st.session_state.chat_history[-1]['response
     st.session_state.latest_follow_up = follow_up or ""
 
     if sql_query and sql_query.strip().lower() != "null":
-        try:
-            columns, results = run_query(sql_query)
-            results = sanitize_results(results)
-            st.session_state.last_result = {
-                "columns": columns,
-                "rows": results,
-                "question": user_input
-            }
-            final_answer = generate_final_response(user_input, columns, results)
-        except Exception as e:
-            final_answer = f"❌ Failed to run your query: {e}"
+        # Validate SQL query and get suggestions for type casting
+        is_valid, validation_error, suggested_sql = validate_sql_query(sql_query)
+        
+        # Use suggested SQL if available (for type casting)
+        final_sql = suggested_sql if suggested_sql else sql_query
+        
+        if not is_valid:
+            final_answer = f"❌ **Query Validation Error:** {validation_error}\n\n💡 **Suggestion:** Please rephrase your question or specify which columns you'd like to analyze."
+        else:
+            try:
+                columns, results = run_query(final_sql)
+                results = sanitize_results(results)
+                st.session_state.last_result = {
+                    "columns": columns,
+                    "rows": results,
+                    "question": user_input
+                }
+                final_answer = generate_final_response(user_input, columns, results)
+            except Exception as e:
+                final_answer = f"❌ Failed to run your query: {e}"
     elif parsed.get("force_format_response"):
         payload = parsed["force_format_response"]
         if isinstance(payload, dict):

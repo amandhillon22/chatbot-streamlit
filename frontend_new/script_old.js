@@ -256,3 +256,123 @@ function showNotification(message) {
 window.addEventListener('load', () => {
     centerInputField.focus();
 });
+                            <div class="typing-dot"></div>
+                            <div class="typing-dot"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            chatMessages.appendChild(typingDiv);
+            scrollToBottom();
+        }
+
+        function hideTypingIndicator() {
+            isTyping = false;
+            const typingIndicator = document.getElementById('typingIndicator');
+            if (typingIndicator) {
+                typingIndicator.remove();
+            }
+        }
+
+        function handleBotResponse(userMessage) {
+            // This is where you'd integrate with your actual API
+            // For now, we'll simulate different types of responses
+            
+            const lowerMessage = userMessage.toLowerCase();
+            
+            if (lowerMessage.includes('table') || lowerMessage.includes('database')) {
+                const tableResponse = `
+                    <p>Here are the tables in your database:</p>
+                    <table>
+                        <tr><th>Table Name</th><th>Records</th><th>Last Modified</th></tr>
+                        <tr><td>users</td><td>1,234</td><td>2024-01-15</td></tr>
+                        <tr><td>products</td><td>856</td><td>2024-01-14</td></tr>
+                        <tr><td>orders</td><td>2,891</td><td>2024-01-15</td></tr>
+                        <tr><td>customers</td><td>1,045</td><td>2024-01-13</td></tr>
+                    </table>
+                `;
+                addMessage(tableResponse, 'bot', true);
+                updateSuggestions(['Show me user details', 'Analyze product performance', 'Recent orders summary']);
+            } else if (lowerMessage.includes('sales') || lowerMessage.includes('top')) {
+                const salesResponse = `
+                    <p>Here are the top 10 records by sales:</p>
+                    <table>
+                        <tr><th>Product</th><th>Sales</th><th>Revenue</th></tr>
+                        <tr><td>Laptop Pro</td><td>145</td><td>$145,000</td></tr>
+                        <tr><td>Smartphone X</td><td>289</td><td>$134,500</td></tr>
+                        <tr><td>Tablet Ultra</td><td>167</td><td>$89,350</td></tr>
+                        <tr><td>Headphones Max</td><td>234</td><td>$78,900</td></tr>
+                        <tr><td>Monitor 4K</td><td>98</td><td>$65,340</td></tr>
+                    </table>
+                `;
+                addMessage(salesResponse, 'bot', true);
+                updateSuggestions(['Show monthly trends', 'Compare with last year', 'Product category analysis']);
+            } else if (lowerMessage.includes('query') || lowerMessage.includes('sql')) {
+                const queryResponse = `
+                    <p>I can help you build SQL queries! Here's an example of a complex query:</p>
+                    <pre>SELECT 
+    p.product_name,
+    SUM(o.quantity) as total_sold,
+    SUM(o.quantity * p.price) as revenue,
+    AVG(r.rating) as avg_rating
+FROM products p
+JOIN orders o ON p.id = o.product_id
+LEFT JOIN reviews r ON p.id = r.product_id
+WHERE o.order_date >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+GROUP BY p.id, p.product_name
+HAVING total_sold > 10
+ORDER BY revenue DESC
+LIMIT 10;</pre>
+                    <p>This query shows top-selling products in the last 30 days with their ratings. What specific query do you need help with?</p>
+                `;
+                addMessage(queryResponse, 'bot', true);
+                updateSuggestions(['Explain this query', 'Optimize query performance', 'Add filters to query']);
+            } else {
+                const defaultResponse = `I understand you're asking about: "${userMessage}". I'm here to help you with database queries, data analysis, and insights. Could you be more specific about what you'd like to explore?`;
+                addMessage(defaultResponse, 'bot');
+                updateSuggestions(['Show database schema', 'Run a sample query', 'Explain data relationships']);
+            }
+        }
+
+        function updateSuggestions(suggestionsList) {
+            suggestions.innerHTML = '';
+            suggestionsList.forEach(suggestion => {
+                const suggestionBtn = document.createElement('button');
+                suggestionBtn.className = 'suggestion';
+                suggestionBtn.textContent = suggestion;
+                suggestionBtn.addEventListener('click', () => {
+                    inputField.value = suggestion;
+                    sendBtn.disabled = false;
+                    sendMessage();
+                });
+                suggestions.appendChild(suggestionBtn);
+            });
+        }
+
+        function showNotification(message) {
+            notificationText.textContent = message;
+            notification.classList.add('show');
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 3000);
+        }
+
+        // Initialize
+        updateSuggestions(['Show me all tables', 'Top performing products', 'Recent activity summary']);
+        
+        // Add scroll to top button
+        addScrollToTopButton();
+        
+        // Add keyboard shortcut for scroll to top (Ctrl + Home)
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'Home') {
+                e.preventDefault();
+                scrollToTop();
+            }
+            // Scroll to bottom (Ctrl + End)
+            if (e.ctrlKey && e.key === 'End') {
+                e.preventDefault();
+                scrollToBottom();
+            }
+        });

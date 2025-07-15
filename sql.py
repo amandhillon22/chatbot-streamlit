@@ -9,8 +9,8 @@ load_dotenv()
 def get_connection():
     return psycopg2.connect(
         host=os.getenv("hostname", "localhost"),
-        dbname=os.getenv("dbname", "pagila"),
-        user=os.getenv("user_name", "support"),
+        dbname=os.getenv("dbname", "rdc_dump"),
+        user=os.getenv("user_name", "postgres"),
         password=os.getenv("password", "Akshit@123"),
         port=5432
     )
@@ -179,6 +179,62 @@ def print_schema(schema):
         print(f"Schema: {schema_name}")
         for table, columns in tables.items():
             print(f"  Table: {table} (" + ", ".join(columns) + ")")
+
+def get_column_types(schema=None, table=None):
+    """
+    Returns column data types for validation.
+    Returns dict: {schema.table.column: data_type}
+    """
+    query = """
+        SELECT table_schema, table_name, column_name, data_type, is_nullable
+        FROM information_schema.columns
+        WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
+    """
+    
+    if schema:
+        query += f" AND table_schema = '{schema}'"
+    if table:
+        query += f" AND table_name = '{table}'"
+    
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(query)
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        # Return dictionary with full column path and data type
+        return {f"{row[0]}.{row[1]}.{row[2]}": row[3] for row in rows}
+    except Exception as e:
+        print("❌ Failed to fetch column types:", e)
+        return {}
+
+def get_numeric_columns(schema=None, table=None):
+    """Return all numeric columns in the database."""
+    query = """
+        SELECT table_schema, table_name, column_name
+        FROM information_schema.columns
+        WHERE data_type IN ('integer', 'bigint', 'smallint', 'decimal', 'numeric', 'real', 'double precision', 'money')
+        AND table_schema NOT IN ('information_schema', 'pg_catalog')
+    """
+    
+    if schema:
+        query += f" AND table_schema = '{schema}'"
+    if table:
+        query += f" AND table_name = '{table}'"
+
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(query)
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return rows
+    except Exception as e:
+        print("❌ Failed to fetch numeric columns:", e)
+        return []
 
 if __name__ == "__main__":
     schema = get_full_schema()
