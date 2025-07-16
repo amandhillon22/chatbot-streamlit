@@ -75,9 +75,15 @@ def chat():
     if chat_history and chat_history[-1].get('follow_up'):
         enriched_prompt = f"{chat_history[-1]['follow_up']}. The user clarifies: {user_input}"
         parsed = english_to_sql(enriched_prompt, chat_context=context)
+        print(f"\n🔍 USER QUERY (Follow-up): {user_input}")
+        print(f"📝 ENRICHED PROMPT: {enriched_prompt}")
     else:
         parsed = english_to_sql(user_input, chat_context=context)
+        print(f"\n🔍 USER QUERY: {user_input}")
+    
     sql_query = parsed.get("sql")
+    print(f"🔧 GENERATED SQL: {sql_query}")
+    print("-" * 80)
     follow_up = parsed.get("follow_up")
     latest_follow_up = follow_up or ""
     columns = rows = None
@@ -85,14 +91,21 @@ def chat():
         # Validate SQL query and get suggestions for type casting
         is_valid, validation_error, suggested_sql = validate_sql_query(sql_query)
         
+        if suggested_sql and suggested_sql != sql_query:
+            print(f"✨ SUGGESTED SQL (with type casting): {suggested_sql}")
+        
         # Use suggested SQL if available (for type casting)
         final_sql = suggested_sql if suggested_sql else sql_query
+        print(f"⚡ FINAL SQL TO EXECUTE: {final_sql}")
         
         if not is_valid:
+            print(f"❌ VALIDATION ERROR: {validation_error}")
             final_answer = f"❌ **Query Validation Error:** {validation_error}\n\n💡 **Suggestion:** Please rephrase your question or specify which columns you'd like to analyze."
         else:
             try:
+                print(f"🔄 EXECUTING QUERY...")
                 columns, results = run_query(final_sql)
+                print(f"✅ QUERY EXECUTED SUCCESSFULLY - Returned {len(results)} rows")
                 results = [
                     [float(cell) if isinstance(cell, Decimal) else cell for cell in row]
                     for row in results
@@ -156,6 +169,7 @@ def chat():
                     }
                     final_answer = generate_final_response(user_input, columns, results, chat_context=context)
             except Exception as e:
+                print(f"💥 QUERY EXECUTION ERROR: {e}")
                 final_answer = f"❌ Failed to run your query: {e}"
     elif parsed.get("force_format_response"):
         payload = parsed["force_format_response"]

@@ -126,6 +126,9 @@ async function sendMessage(message) {
     const typingId = addTypingIndicator();
     
     try {
+        console.log('🚀 Sending message to server:', message);
+        console.log('📚 Chat history:', chatHistory);
+        
         const response = await fetch('/chat', {
             method: 'POST',
             headers: {
@@ -142,6 +145,7 @@ async function sendMessage(message) {
         }
 
         const data = await response.json();
+        console.log('📨 Received response from server:', data);
         
         // Remove typing indicator
         removeTypingIndicator(typingId);
@@ -152,13 +156,8 @@ async function sendMessage(message) {
         // Update chat history
         chatHistory.push({
             user: message,
-            response: data.response,
-            follow_up: data.follow_up
+            response: data.response
         });
-
-        if (data.follow_up) {
-            showNotification(`Follow-up: ${data.follow_up}`);
-        }
 
     } catch (error) {
         console.error('Error:', error);
@@ -174,12 +173,25 @@ function addMessage(content, sender) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${sender}`;
     
+    // Add avatar
+    const avatar = document.createElement('div');
+    avatar.className = 'message-avatar';
+    if (sender === 'user') {
+        avatar.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-3.3137 3.134-6 8-6s8 2.6863 8 6v1H4v-1z"/></svg>';
+    } else {
+        avatar.innerHTML = '🤖'; // Bot icon
+    }
+    
     const messageContent = document.createElement('div');
     messageContent.className = 'message-content';
     
     if (sender === 'assistant') {
-        // Parse markdown for assistant messages
-        messageContent.innerHTML = marked.parse(content);
+        // Parse markdown for assistant messages and wrap tables
+        let htmlContent = marked.parse(content);
+        // Wrap tables in scrollable containers with proper styling
+        htmlContent = htmlContent.replace(/<table>/g, '<div class="table-container"><table>');
+        htmlContent = htmlContent.replace(/<\/table>/g, '</table></div>');
+        messageContent.innerHTML = htmlContent;
     } else {
         messageContent.textContent = content;
     }
@@ -188,8 +200,23 @@ function addMessage(content, sender) {
     timestamp.className = 'message-timestamp';
     timestamp.textContent = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     
-    messageDiv.appendChild(messageContent);
-    messageDiv.appendChild(timestamp);
+    messageDiv.appendChild(avatar);
+    const contentWrapper = document.createElement('div');
+    contentWrapper.style.flex = '1';
+    
+    // For user messages, put content wrapper before avatar (so avatar appears on right)
+    if (sender === 'user') {
+        contentWrapper.style.display = 'flex';
+        contentWrapper.style.flexDirection = 'column';
+        contentWrapper.style.alignItems = 'flex-end';
+        messageDiv.insertBefore(contentWrapper, avatar);
+    } else {
+        messageDiv.appendChild(contentWrapper);
+    }
+    
+    contentWrapper.appendChild(messageContent);
+    contentWrapper.appendChild(timestamp);
+    
     chatMessages.appendChild(messageDiv);
     
     // Scroll to bottom
@@ -202,6 +229,11 @@ function addTypingIndicator() {
     messageDiv.className = 'message assistant';
     messageDiv.id = typingId;
     
+    // Add bot avatar
+    const avatar = document.createElement('div');
+    avatar.className = 'message-avatar';
+    avatar.innerHTML = '🤖';
+    
     const messageContent = document.createElement('div');
     messageContent.className = 'message-content';
     
@@ -210,7 +242,13 @@ function addTypingIndicator() {
     loadingDots.innerHTML = '<div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>';
     
     messageContent.appendChild(loadingDots);
-    messageDiv.appendChild(messageContent);
+    
+    messageDiv.appendChild(avatar);
+    const contentWrapper = document.createElement('div');
+    contentWrapper.style.flex = '1';
+    contentWrapper.appendChild(messageContent);
+    messageDiv.appendChild(contentWrapper);
+    
     chatMessages.appendChild(messageDiv);
     
     // Scroll to bottom
