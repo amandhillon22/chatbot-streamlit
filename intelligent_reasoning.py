@@ -14,13 +14,51 @@ class IntelligentReasoning:
     """
     
     def __init__(self):
-        # Common data relationship patterns
+        # Common data relationship patterns - ENHANCED HIERARCHICAL
         self.relationship_patterns = {
             'plant_name': {
                 'from_plant_id': {
                     'source_tables': ['plant_master', 'plant_schedule'],
                     'key_column': 'plant_id',
                     'target_column': 'plant_name'
+                },
+                'from_vehicle': {
+                    'source_tables': ['hosp_master', 'vehicle_master'],
+                    'join_logic': 'JOIN vehicle_master vm ON vm.id_hosp = hm.id_no',
+                    'target_column': 'hm.name as plant_name'
+                }
+            },
+            'zone_name': {
+                'from_vehicle': {
+                    'source_tables': ['zone_master', 'district_master', 'hosp_master', 'vehicle_master'],
+                    'join_logic': '''
+                        JOIN vehicle_master vm ON vm.id_hosp = hm.id_no 
+                        JOIN hosp_master hm ON hm.id_no = vm.id_hosp
+                        JOIN district_master dm ON dm.id_no = hm.id_dist 
+                        JOIN zone_master zm ON zm.id_no = dm.id_zone
+                    ''',
+                    'target_column': 'zm.zone_name'
+                },
+                'from_region': {
+                    'source_tables': ['zone_master', 'district_master'],
+                    'join_logic': 'JOIN district_master dm ON dm.id_zone = zm.id_no',
+                    'target_column': 'zm.zone_name'
+                }
+            },
+            'region_name': {
+                'from_vehicle': {
+                    'source_tables': ['district_master', 'hosp_master', 'vehicle_master'],
+                    'join_logic': '''
+                        JOIN vehicle_master vm ON vm.id_hosp = hm.id_no
+                        JOIN hosp_master hm ON hm.id_no = vm.id_hosp 
+                        JOIN district_master dm ON dm.id_no = hm.id_dist
+                    ''',
+                    'target_column': 'dm.name as region_name'
+                },
+                'from_plant': {
+                    'source_tables': ['district_master', 'hosp_master'],
+                    'join_logic': 'JOIN hosp_master hm ON hm.id_dist = dm.id_no',
+                    'target_column': 'dm.name as region_name'
                 }
             },
             'customer_name': {
@@ -35,6 +73,15 @@ class IntelligentReasoning:
                     'source_tables': ['vehicle_master', 'mega_trips'],
                     'key_column': 'reg_no',
                     'target_column': '*'
+                },
+                'hierarchical_info': {
+                    'source_tables': ['vehicle_master', 'hosp_master', 'district_master', 'zone_master'],
+                    'join_logic': '''
+                        LEFT JOIN hosp_master hm ON vm.id_hosp = hm.id_no
+                        LEFT JOIN district_master dm ON hm.id_dist = dm.id_no  
+                        LEFT JOIN zone_master zm ON dm.id_zone = zm.id_no
+                    ''',
+                    'target_column': 'vm.reg_no, hm.name as plant, dm.name as region, zm.zone_name'
                 }
             },
             'driver_name': {
@@ -46,8 +93,46 @@ class IntelligentReasoning:
             }
         }
         
-        # Intent patterns for auto-resolution
+        # Intent patterns for auto-resolution - ENHANCED HIERARCHICAL
         self.intent_patterns = [
+            # Zone hierarchy patterns
+            {
+                'pattern': r'(?:zone|area).*(?:vehicle|truck)\s+([A-Z0-9-]+)',
+                'intent': 'get_zone_from_vehicle',
+                'extractor': self._extract_zone_from_vehicle
+            },
+            {
+                'pattern': r'(?:region|district).*(?:vehicle|truck)\s+([A-Z0-9-]+)',
+                'intent': 'get_region_from_vehicle',
+                'extractor': self._extract_region_from_vehicle
+            },
+            {
+                'pattern': r'(?:plant|hospital|facility).*(?:vehicle|truck)\s+([A-Z0-9-]+)',
+                'intent': 'get_plant_from_vehicle',
+                'extractor': self._extract_plant_from_vehicle
+            },
+            {
+                'pattern': r'(?:vehicles|trucks).*(?:zone|area)\s+([A-Z0-9\s]+)',
+                'intent': 'get_vehicles_in_zone',
+                'extractor': self._extract_vehicles_in_zone
+            },
+            {
+                'pattern': r'(?:vehicles|trucks).*(?:region|district)\s+([A-Z0-9\s]+)',
+                'intent': 'get_vehicles_in_region',
+                'extractor': self._extract_vehicles_in_region
+            },
+            {
+                'pattern': r'(?:vehicles|trucks).*(?:plant|hospital)\s+([A-Z0-9\s]+)',
+                'intent': 'get_vehicles_in_plant',
+                'extractor': self._extract_vehicles_in_plant
+            },
+            {
+                'pattern': r'(?:hierarchy|structure|relationship).*(?:vehicle|truck)\s+([A-Z0-9-]+)',
+                'intent': 'get_vehicle_hierarchy',
+                'extractor': self._extract_vehicle_hierarchy
+            },
+            
+            # Existing plant patterns
             {
                 'pattern': r'(?:plant\s+name|name\s+of.*plant).*(?:plant\s+id|id)\s*(\d+)',
                 'intent': 'get_plant_name_from_id',
@@ -57,6 +142,16 @@ class IntelligentReasoning:
                 'pattern': r'(?:plant\s+name|name\s+of.*plant).*(?:complaint.*(\d+)|mentioned.*(\d+))',
                 'intent': 'get_plant_name_from_context',
                 'extractor': self._extract_plant_from_complaint_context
+            },
+            {
+                'pattern': r'(?:plant\s+id|id.*plant).*(\w+)',
+                'intent': 'get_plant_id_from_name',
+                'extractor': self._extract_plant_name_for_id
+            },
+            {
+                'pattern': r'(?:site\s+visit.*details).*(\w+\s+plant|\w+)',
+                'intent': 'get_site_visit_for_plant',
+                'extractor': self._extract_plant_for_site_visit
             },
             {
                 'pattern': r'(?:customer\s+name|name\s+of.*customer).*(?:customer\s+id|id)\s*(\d+)',
@@ -183,22 +278,69 @@ class IntelligentReasoning:
         
         return None
     
+    def _extract_plant_name_for_id(self, query: str, match, chat_context) -> Optional[Dict]:
+        """Extract plant name to find its ID"""
+        plant_name = match.group(1)
+        if plant_name:
+            return {
+                'plant_name': plant_name.strip(),
+                'target_info': 'plant_id',
+                'source': 'direct_mention'
+            }
+        return None
+    
+    def _extract_plant_for_site_visit(self, query: str, match, chat_context) -> Optional[Dict]:
+        """Extract plant name for site visit queries"""
+        plant_reference = match.group(1)
+        if plant_reference:
+            return {
+                'plant_reference': plant_reference.strip(),
+                'target_info': 'site_visit_details',
+                'source': 'plant_site_visit_query'
+            }
+        return None
+    
     def generate_intelligent_query(self, reasoning_result: Dict) -> Optional[str]:
         """
-        Generate SQL query based on intelligent reasoning result
+        Generate SQL query based on intelligent reasoning result - ENHANCED HIERARCHICAL
         """
         intent = reasoning_result['intent']
         extracted_data = reasoning_result['extracted_data']
         
+        # Check for hierarchical queries first
+        if intent.startswith(('get_zone_', 'get_region_', 'get_plant_', 'get_vehicles_', 'get_vehicle_hierarchy')):
+            return self.generate_hierarchical_query(reasoning_result)
+        
+        # Existing query generation logic
         if intent == 'get_plant_name_from_id' or \
            intent == 'get_plant_name_from_context':
             
             plant_id = extracted_data.get('plant_id')
             if plant_id:
-                return f"""SELECT DISTINCT plant_id, plant_name, plant_code, cust_name 
+                # Use site_name or cust_name as plant name since that seems to be the actual plant identifier
+                return f"""SELECT DISTINCT plant_id, plant_code, site_name, cust_name, fse_name
                           FROM public.plant_schedule 
                           WHERE plant_id = {plant_id} 
-                          LIMIT 1;"""
+                          LIMIT 5;"""
+        
+        elif intent == 'get_plant_id_from_name':
+            plant_name = extracted_data.get('plant_name')
+            if plant_name:
+                return f"""SELECT DISTINCT plant_id, plant_code, site_name, cust_name, fse_name
+                          FROM public.plant_schedule 
+                          WHERE site_name ILIKE '%{plant_name}%' OR cust_name ILIKE '%{plant_name}%' OR plant_code ILIKE '%{plant_name}%'
+                          LIMIT 10;"""
+        
+        elif intent == 'get_site_visit_for_plant':
+            plant_reference = extracted_data.get('plant_reference')
+            if plant_reference:
+                return f"""SELECT DISTINCT csv.*, ps.site_name, ps.cust_name, ps.plant_code
+                          FROM public.crm_site_visit_dtls csv
+                          JOIN public.plant_schedule ps ON csv.plant_id = ps.plant_id
+                          WHERE ps.site_name ILIKE '%{plant_reference}%' 
+                             OR ps.cust_name ILIKE '%{plant_reference}%' 
+                             OR ps.plant_code ILIKE '%{plant_reference}%'
+                          LIMIT 10;"""
         
         elif intent == 'get_customer_name_from_id':
             customer_id = extracted_data.get('customer_id') 
@@ -212,11 +354,26 @@ class IntelligentReasoning:
     
     def create_intelligent_response(self, reasoning_result: Dict, query_result: Dict) -> str:
         """
-        Create a natural, intelligent response that explains the reasoning
+        Create a natural, intelligent response that explains the reasoning - ENHANCED HIERARCHICAL
         """
         extracted_data = reasoning_result['extracted_data']
+        intent = reasoning_result['intent']
         source = extracted_data.get('source', 'unknown')
         
+        # Hierarchical response templates
+        if intent.startswith(('get_zone_', 'get_region_', 'get_plant_', 'get_vehicles_', 'get_vehicle_hierarchy')):
+            hierarchical_responses = {
+                'get_zone_from_vehicle': f"Here's the zone information for vehicle {extracted_data.get('vehicle_reg', 'N/A')}:",
+                'get_region_from_vehicle': f"Here's the region information for vehicle {extracted_data.get('vehicle_reg', 'N/A')}:",
+                'get_plant_from_vehicle': f"Here's the plant information for vehicle {extracted_data.get('vehicle_reg', 'N/A')}:",
+                'get_vehicles_in_zone': f"Here are the vehicles in zone '{extracted_data.get('zone_name', 'N/A')}':",
+                'get_vehicles_in_region': f"Here are the vehicles in region '{extracted_data.get('region_name', 'N/A')}':",
+                'get_vehicles_in_plant': f"Here are the vehicles in plant '{extracted_data.get('plant_name', 'N/A')}':",
+                'get_vehicle_hierarchy': f"Here's the complete hierarchy for vehicle {extracted_data.get('vehicle_reg', 'N/A')}:",
+            }
+            return hierarchical_responses.get(intent, "Here's the hierarchical information you requested:")
+        
+        # Existing plant responses
         if reasoning_result['intent'].startswith('get_plant_name'):
             plant_id = extracted_data.get('plant_id')
             
@@ -236,6 +393,115 @@ class IntelligentReasoning:
             return " ".join(response_parts)
         
         return "I found the information you were looking for based on our conversation context."
+
+    # HIERARCHICAL EXTRACTOR METHODS
+    def _extract_zone_from_vehicle(self, match, chat_context):
+        """Extract vehicle registration for zone lookup"""
+        vehicle_reg = match.group(1) if match.groups() else None
+        return {'vehicle_reg': vehicle_reg} if vehicle_reg else None
+
+    def _extract_region_from_vehicle(self, match, chat_context):
+        """Extract vehicle registration for region lookup"""
+        vehicle_reg = match.group(1) if match.groups() else None
+        return {'vehicle_reg': vehicle_reg} if vehicle_reg else None
+
+    def _extract_plant_from_vehicle(self, match, chat_context):
+        """Extract vehicle registration for plant lookup"""
+        vehicle_reg = match.group(1) if match.groups() else None
+        return {'vehicle_reg': vehicle_reg} if vehicle_reg else None
+
+    def _extract_vehicles_in_zone(self, match, chat_context):
+        """Extract zone name for vehicle lookup"""
+        zone_name = match.group(1).strip() if match.groups() else None
+        return {'zone_name': zone_name} if zone_name else None
+
+    def _extract_vehicles_in_region(self, match, chat_context):
+        """Extract region name for vehicle lookup"""
+        region_name = match.group(1).strip() if match.groups() else None
+        return {'region_name': region_name} if region_name else None
+
+    def _extract_vehicles_in_plant(self, match, chat_context):
+        """Extract plant name for vehicle lookup"""
+        plant_name = match.group(1).strip() if match.groups() else None
+        return {'plant_name': plant_name} if plant_name else None
+
+    def _extract_vehicle_hierarchy(self, match, chat_context):
+        """Extract vehicle registration for complete hierarchy lookup"""
+        vehicle_reg = match.group(1) if match.groups() else None
+        return {'vehicle_reg': vehicle_reg} if vehicle_reg else None
+
+    def generate_hierarchical_query(self, reasoning_result):
+        """Generate SQL queries for hierarchical relationships"""
+        intent = reasoning_result['intent']
+        extracted_data = reasoning_result['extracted_data']
+        
+        hierarchical_queries = {
+            'get_zone_from_vehicle': lambda data: f"""
+                SELECT zm.zone_name, dm.name as district_name, hm.name as plant_name, vm.reg_no
+                FROM zone_master zm 
+                JOIN district_master dm ON zm.id_no = dm.id_zone 
+                JOIN hosp_master hm ON dm.id_no = hm.id_dist 
+                JOIN vehicle_master vm ON hm.id_no = vm.id_hosp 
+                WHERE vm.reg_no = '{data.get('vehicle_reg', '')}'
+            """,
+            
+            'get_region_from_vehicle': lambda data: f"""
+                SELECT dm.name as region_name, hm.name as plant_name, vm.reg_no
+                FROM district_master dm 
+                JOIN hosp_master hm ON dm.id_no = hm.id_dist 
+                JOIN vehicle_master vm ON hm.id_no = vm.id_hosp 
+                WHERE vm.reg_no = '{data.get('vehicle_reg', '')}'
+            """,
+            
+            'get_plant_from_vehicle': lambda data: f"""
+                SELECT hm.name as plant_name, hm.address, vm.reg_no
+                FROM hosp_master hm 
+                JOIN vehicle_master vm ON hm.id_no = vm.id_hosp 
+                WHERE vm.reg_no = '{data.get('vehicle_reg', '')}'
+            """,
+            
+            'get_vehicles_in_zone': lambda data: f"""
+                SELECT vm.reg_no, hm.name as plant_name, dm.name as district_name
+                FROM vehicle_master vm 
+                JOIN hosp_master hm ON vm.id_hosp = hm.id_no 
+                JOIN district_master dm ON hm.id_dist = dm.id_no 
+                JOIN zone_master zm ON dm.id_zone = zm.id_no 
+                WHERE zm.zone_name ILIKE '%{data.get('zone_name', '')}%'
+                ORDER BY vm.reg_no
+            """,
+            
+            'get_vehicles_in_region': lambda data: f"""
+                SELECT vm.reg_no, hm.name as plant_name
+                FROM vehicle_master vm 
+                JOIN hosp_master hm ON vm.id_hosp = hm.id_no 
+                JOIN district_master dm ON hm.id_dist = dm.id_no 
+                WHERE dm.name ILIKE '%{data.get('region_name', '')}%'
+                ORDER BY vm.reg_no
+            """,
+            
+            'get_vehicles_in_plant': lambda data: f"""
+                SELECT vm.reg_no, vm.regional_name
+                FROM vehicle_master vm 
+                JOIN hosp_master hm ON vm.id_hosp = hm.id_no 
+                WHERE hm.name ILIKE '%{data.get('plant_name', '')}%'
+                ORDER BY vm.reg_no
+            """,
+            
+            'get_vehicle_hierarchy': lambda data: f"""
+                SELECT vm.reg_no, hm.name as plant_name, dm.name as district_name, zm.zone_name
+                FROM vehicle_master vm 
+                LEFT JOIN hosp_master hm ON vm.id_hosp = hm.id_no 
+                LEFT JOIN district_master dm ON hm.id_dist = dm.id_no 
+                LEFT JOIN zone_master zm ON dm.id_zone = zm.id_no 
+                WHERE vm.reg_no = '{data.get('vehicle_reg', '')}'
+            """
+        }
+        
+        query_generator = hierarchical_queries.get(intent)
+        if query_generator:
+            return query_generator(extracted_data).strip()
+        
+        return None
 
 def test_intelligent_reasoning():
     """Test the intelligent reasoning system"""

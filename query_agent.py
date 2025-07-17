@@ -218,7 +218,18 @@ def english_to_sql(prompt, chat_context=None):
     # 🏭 ENHANCED PLANT-VEHICLE QUERY HANDLING
     if re.search(r'\b(plant|site|customer|location)\b', prompt, re.IGNORECASE):
         plant_guidance = """
-🏭 **PLANT-VEHICLE RELATIONSHIP GUIDANCE:**
+🏭 **PLANT QUERY GUIDANCE - CRITICAL:**
+For plant name queries:
+1. **PLANT NAME**: Use site_name or cust_name from plant_schedule (NOT plant_code)
+2. **PLANT ID TO NAME**: SELECT plant_id, site_name, cust_name, plant_code FROM plant_schedule WHERE plant_id = X
+3. **PLANT NAME TO ID**: SELECT plant_id, site_name, cust_name FROM plant_schedule WHERE site_name ILIKE '%name%' OR cust_name ILIKE '%name%'
+4. **SITE VISITS BY PLANT**: JOIN crm_site_visit_dtls WITH plant_schedule ON plant_id
+
+⚠️ IMPORTANT: 
+- plant_code (like 'MU7') is NOT the plant name
+- site_name and cust_name contain the actual descriptive plant names
+- When user asks for "plant name", show site_name or cust_name, NOT plant_code
+
 For plant/site/customer queries related to vehicles:
 1. Use JOIN between mega_trips and plant_schedule tables
 2. mega_trips.plant_id = plant_schedule.plant_id (both are integers)
@@ -227,27 +238,91 @@ For plant/site/customer queries related to vehicles:
 
 Examples:
 - "What plant does vehicle X belong to?" → SELECT ps.plant_code, ps.cust_name FROM mega_trips mt JOIN plant_schedule ps ON mt.plant_id = ps.plant_id WHERE mt.reg_no = 'X'
-- "Tell me about the plant for the 7th vehicle" → Use ordinal reference to get vehicle reg_no, then JOIN
+- "Plant name for plant ID 460" → SELECT site_name, cust_name FROM plant_schedule WHERE plant_id = 460
+- "Site visit details for Mohali plant" → SELECT csv.* FROM crm_site_visit_dtls csv JOIN plant_schedule ps ON csv.plant_id = ps.plant_id WHERE ps.site_name ILIKE '%mohali%'
 """
     else:
         plant_guidance = ""
 
-    # 🚀 ENHANCED REGION QUERY HANDLING
-    if re.search(r'\b(region|location|area|zone)\b', prompt, re.IGNORECASE):
-        # For region queries, prioritize vehicle_master.regional_name first, then vehicle_location_shifting.region
-        region_guidance = """
-🌍 **REGION DATA GUIDANCE:**
-For region/location queries:
-1. PRIMARY SOURCE: Use vehicle_master.regional_name (available for most vehicles)
-2. SECONDARY SOURCE: Use vehicle_location_shifting.region (limited data)
-3. ALWAYS prefer vehicle_master table for region information unless specifically asking about location shifting
+    # 🚀 ENHANCED HIERARCHICAL QUERY HANDLING (Zone → Region → Plant → Vehicle)
+    hierarchy_guidance = ""
+    
+    # Zone queries
+    if re.search(r'\b(zone)\b', prompt, re.IGNORECASE):
+        hierarchy_guidance += """
+🌐 **ZONE HIERARCHY GUIDANCE:**
+For zone-related queries, use the hierarchical structure:
+- zone_master (zone_name, id_no) ← district_master (name, id_zone) ← hosp_master (name, id_dist) ← vehicle_master (reg_no, id_hosp)
 
 Examples:
-- "What region does vehicle X belong to?" → SELECT regional_name FROM vehicle_master WHERE reg_no = 'X'
-- "Show all vehicles and their regions" → SELECT reg_no, regional_name FROM vehicle_master WHERE regional_name IS NOT NULL
+- "What zone does vehicle X belong to?" → 
+  SELECT zm.zone_name FROM zone_master zm 
+  JOIN district_master dm ON zm.id_no = dm.id_zone 
+  JOIN hosp_master hm ON dm.id_no = hm.id_dist 
+  JOIN vehicle_master vm ON hm.id_no = vm.id_hosp 
+  WHERE vm.reg_no = 'X'
+- "Show all zones" → SELECT zone_name FROM zone_master
 """
-    else:
-        region_guidance = ""
+
+    # Region/District queries  
+    if re.search(r'\b(region|district|location|area)\b', prompt, re.IGNORECASE):
+        hierarchy_guidance += """
+� **REGION/DISTRICT HIERARCHY GUIDANCE:**
+For region/district queries, use the hierarchical structure:
+1. PRIMARY SOURCE: district_master.name (official regions/districts)
+2. SECONDARY SOURCE: vehicle_master.regional_name (vehicle-specific regions)
+3. HIERARCHY: zone_master ← district_master ← hosp_master ← vehicle_master
+
+Examples:
+- "What region does vehicle X belong to?" → 
+  SELECT dm.name as district_name, vm.regional_name FROM district_master dm 
+  JOIN hosp_master hm ON dm.id_no = hm.id_dist 
+  JOIN vehicle_master vm ON hm.id_no = vm.id_hosp 
+  WHERE vm.reg_no = 'X'
+- "Show all vehicles in region Y" → 
+  SELECT vm.reg_no FROM vehicle_master vm 
+  JOIN hosp_master hm ON vm.id_hosp = hm.id_no 
+  JOIN district_master dm ON hm.id_dist = dm.id_no 
+  WHERE dm.name ILIKE '%Y%'
+"""
+
+    # Plant/Hospital queries
+    if re.search(r'\b(plant|hospital|site|facility)\b', prompt, re.IGNORECASE):
+        hierarchy_guidance += """
+🏭 **PLANT/HOSPITAL HIERARCHY GUIDANCE:**
+For plant/hospital queries, use the hierarchical structure:
+- hosp_master.name (official plant/hospital names) with id_dist → district_master, id_zone → zone_master
+- Connection to vehicles via vehicle_master.id_hosp
+
+Examples:
+- "What plant does vehicle X belong to?" → 
+  SELECT hm.name as plant_name FROM hosp_master hm 
+  JOIN vehicle_master vm ON hm.id_no = vm.id_hosp 
+  WHERE vm.reg_no = 'X'
+- "Show all vehicles for plant Y" → 
+  SELECT vm.reg_no FROM vehicle_master vm 
+  JOIN hosp_master hm ON vm.id_hosp = hm.id_no 
+  WHERE hm.name ILIKE '%Y%'
+"""
+
+    # Vehicle hierarchy queries
+    if re.search(r'\b(vehicle|truck|fleet)\b', prompt, re.IGNORECASE):
+        hierarchy_guidance += """
+🚛 **VEHICLE HIERARCHY GUIDANCE:**
+For vehicle queries, use the complete hierarchy:
+- vehicle_master connects to hosp_master via id_hosp
+- hosp_master connects to district_master via id_dist  
+- district_master connects to zone_master via id_zone
+
+Examples:
+- "Show vehicle X with full hierarchy" → 
+  SELECT vm.reg_no, hm.name as plant, dm.name as district, zm.zone_name 
+  FROM vehicle_master vm 
+  LEFT JOIN hosp_master hm ON vm.id_hosp = hm.id_no 
+  LEFT JOIN district_master dm ON hm.id_dist = dm.id_no 
+  LEFT JOIN zone_master zm ON dm.id_zone = zm.id_no 
+  WHERE vm.reg_no = 'X'
+"""
 
     # 🚀 ENHANCED EMBEDDING PROCESSING with Advanced Table Mapping
     relevant_schema_text = SCHEMA_PROMPT  # Default fallback
@@ -318,7 +393,7 @@ You are an intelligent SQL assistant for multiple PostgreSQL schemas with advanc
 
 {plant_guidance}
 
-{region_guidance}
+{hierarchy_guidance}
 
 Always use PostgreSQL-compatible datetime functions like EXTRACT(), DATE_TRUNC(), and TO_CHAR() instead of SQLite functions like strftime().
 

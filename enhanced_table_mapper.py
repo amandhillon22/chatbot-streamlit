@@ -20,15 +20,33 @@ class EnhancedTableMapper:
             'site visit details': ['crm_site_visit_dtls'],
             'visit details': ['crm_site_visit_dtls', 'visit_history'],
             
-            # Vehicle Management
+            # Vehicle Management - HIERARCHICAL
             'vehicle': ['vehicle_master', 'mega_trips', 'drv_veh_qr_assign'],
             'truck': ['vehicle_master', 'mega_trips'],
             'fleet': ['vehicle_master', 'mega_trips'],
             
-            # Plant and Location
-            'plant': ['plant_schedule', 'plant_master', 'plant_data'],
-            'location': ['vehicle_location_shifting', 'plant_schedule'],
-            'region': ['vehicle_master', 'vehicle_location_shifting'],
+            # Plant and Location - ENHANCED HIERARCHICAL
+            'plant': ['hosp_master', 'plant_schedule', 'plant_master'],
+            'plant name': ['hosp_master', 'plant_schedule', 'plant_master'],
+            'plant id': ['hosp_master', 'plant_schedule', 'plant_master'],
+            'plant details': ['hosp_master', 'plant_schedule', 'plant_master'],
+            'hospital': ['hosp_master'],
+            'facility': ['hosp_master'],
+            'site': ['hosp_master', 'plant_schedule'],
+            'mohali plant': ['hosp_master', 'plant_schedule', 'plant_master'],
+            
+            # Region and Zone - HIERARCHICAL
+            'region': ['district_master', 'vehicle_master', 'vehicle_location_shifting'],
+            'district': ['district_master'],
+            'zone': ['zone_master', 'district_master'],
+            'location': ['district_master', 'hosp_master', 'vehicle_location_shifting', 'plant_schedule'],
+            'area': ['district_master', 'zone_master'],
+            
+            # Hierarchical Relationships
+            'zone region': ['zone_master', 'district_master'],
+            'region plant': ['district_master', 'hosp_master'],
+            'plant vehicle': ['hosp_master', 'vehicle_master'],
+            'zone to vehicle': ['zone_master', 'district_master', 'hosp_master', 'vehicle_master'],
             
             # Maintenance
             'maintenance': ['veh_maintain', 'tc_maintenances', 'maintenance_history'],
@@ -46,17 +64,20 @@ class EnhancedTableMapper:
             'payment': ['payment_history', 'billing_master'],
         }
         
-        # Domain-specific table groups
+        # Domain-specific table groups - ENHANCED HIERARCHICAL
         self.table_domains = {
             'crm': ['crm_site_visit_dtls', 'customer_complaints', 'crm_complaints'],
             'vehicle': ['vehicle_master', 'mega_trips', 'vehicle_breakdown'],
             'driver': ['driver_master', 'drv_veh_qr_assign'],
-            'plant': ['plant_schedule', 'plant_master', 'plant_data'],
+            'plant': ['hosp_master', 'plant_schedule', 'plant_master', 'plant_data'],
+            'region': ['district_master', 'vehicle_master'],
+            'zone': ['zone_master', 'district_master'],
+            'hierarchy': ['zone_master', 'district_master', 'hosp_master', 'vehicle_master'],
             'maintenance': ['veh_maintain', 'tc_maintenances'],
             'financial': ['billing_master', 'payment_history'],
         }
         
-        # Exact table name aliases
+        # Exact table name aliases - ENHANCED HIERARCHICAL
         self.table_aliases = {
             'site_visit': 'crm_site_visit_dtls',
             'site_visits': 'crm_site_visit_dtls',
@@ -64,6 +85,30 @@ class EnhancedTableMapper:
             'visits': 'crm_site_visit_dtls',
             'complaints': 'customer_complaints',
             'complaint': 'customer_complaints',
+            'zones': 'zone_master',
+            'districts': 'district_master',
+            'regions': 'district_master',
+            'hospitals': 'hosp_master',
+            'plants': 'hosp_master',
+            'facilities': 'hosp_master',
+        }
+        
+        # Hierarchical phrase patterns
+        self.hierarchical_patterns = {
+            r'\b(?:what|which|show)\s+(?:zone|area)\s+(?:does|for|of)\s+(?:vehicle|truck)\s+([A-Z0-9-]+)': 
+                ['zone_master', 'district_master', 'hosp_master', 'vehicle_master'],
+            r'\b(?:what|which|show)\s+(?:region|district)\s+(?:does|for|of)\s+(?:vehicle|truck)\s+([A-Z0-9-]+)': 
+                ['district_master', 'hosp_master', 'vehicle_master'],
+            r'\b(?:what|which|show)\s+(?:plant|hospital|facility)\s+(?:does|for|of)\s+(?:vehicle|truck)\s+([A-Z0-9-]+)': 
+                ['hosp_master', 'vehicle_master'],
+            r'\b(?:vehicles|trucks)\s+(?:in|for|at)\s+(?:zone|area)\s+([A-Z0-9\s]+)': 
+                ['zone_master', 'district_master', 'hosp_master', 'vehicle_master'],
+            r'\b(?:vehicles|trucks)\s+(?:in|for|at)\s+(?:region|district)\s+([A-Z0-9\s]+)': 
+                ['district_master', 'hosp_master', 'vehicle_master'],
+            r'\b(?:vehicles|trucks)\s+(?:in|for|at)\s+(?:plant|hospital)\s+([A-Z0-9\s]+)': 
+                ['hosp_master', 'vehicle_master'],
+            r'\b(?:zone|region|plant|vehicle)\s+(?:hierarchy|relationship|structure)': 
+                ['zone_master', 'district_master', 'hosp_master', 'vehicle_master'],
         }
     
     def extract_keywords(self, query: str) -> Set[str]:
@@ -85,11 +130,17 @@ class EnhancedTableMapper:
         return keywords
     
     def get_priority_tables(self, query: str) -> List[str]:
-        """Get high-priority tables based on keyword matching"""
+        """Get high-priority tables based on keyword and hierarchical pattern matching"""
         keywords = self.extract_keywords(query)
         priority_tables = []
         
-        # Check for exact phrase matches first (highest priority)
+        # Check for hierarchical patterns first (highest priority)
+        for pattern, tables in self.hierarchical_patterns.items():
+            if re.search(pattern, query, re.IGNORECASE):
+                priority_tables.extend(tables)
+                print(f"🎯 HIERARCHICAL MATCH: '{pattern}' → {tables}")
+        
+        # Check for exact phrase matches (high priority)
         for phrase, tables in self.priority_mappings.items():
             if phrase in query.lower():
                 priority_tables.extend(tables)
@@ -103,6 +154,8 @@ class EnhancedTableMapper:
             # Check table aliases
             if keyword in self.table_aliases:
                 priority_tables.append(self.table_aliases[keyword])
+        
+        return list(dict.fromkeys(priority_tables))  # Remove duplicates while preserving order
         
         return list(set(priority_tables))  # Remove duplicates
     
