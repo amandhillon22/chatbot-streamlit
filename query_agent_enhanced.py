@@ -9,12 +9,21 @@ from sql import get_full_schema
 
 # Import embeddings functionality
 try:
-    from embeddings import embedding_manager, initialize_embeddings
+    from sentence_embeddings import sentence_embedding_manager, initialize_sentence_embeddings
     EMBEDDINGS_AVAILABLE = True
-    print("✅ Embeddings module loaded successfully")
+    print("✅ Sentence transformer embeddings module loaded successfully")
 except ImportError as e:
-    print(f"⚠️ Embeddings not available: {e}")
+    print(f"⚠️ Sentence transformer embeddings not available: {e}")
     EMBEDDINGS_AVAILABLE = False
+
+# Import distance unit conversion functionality
+try:
+    from distance_units import get_distance_conversion_info, get_distance_columns_info
+    DISTANCE_CONVERSION_AVAILABLE = True
+    print("✅ Distance unit conversion system loaded successfully")
+except ImportError as e:
+    print(f"⚠️ Distance unit conversion not available: {e}")
+    DISTANCE_CONVERSION_AVAILABLE = False
 
 load_dotenv()
 
@@ -39,10 +48,10 @@ SCHEMA_PROMPT = schema_dict_to_prompt(SCHEMA_DICT)
 # Initialize embeddings if available
 if EMBEDDINGS_AVAILABLE:
     try:
-        embedding_manager = initialize_embeddings()
-        print("🚀 Embeddings system initialized")
+        embedding_manager = initialize_sentence_embeddings()
+        print("🚀 Sentence transformer embeddings system initialized")
     except Exception as e:
-        print(f"⚠️ Failed to initialize embeddings: {e}")
+        print(f"⚠️ Failed to initialize sentence transformer embeddings: {e}")
         EMBEDDINGS_AVAILABLE = False
 
 def extract_json(response):
@@ -75,22 +84,23 @@ def english_to_sql(prompt, chat_context=None):
             }
         }
 
-    # 🚀 EMBEDDING-ENHANCED PROCESSING
+    # 🚀 SENTENCE TRANSFORMER EMBEDDING-ENHANCED PROCESSING
     relevant_schema_text = SCHEMA_PROMPT  # Default fallback
     
-    if EMBEDDINGS_AVAILABLE:
+    if EMBEDDINGS_AVAILABLE and embedding_manager:
         try:
             # Check for similar previous queries first
             similar_query = embedding_manager.find_similar_query(prompt)
             if similar_query:
                 print(f"🎯 Found similar query pattern: {similar_query['query'][:50]}...")
+                print(f"    Similarity: {similar_query.get('similarity', 0):.3f}")
                 # Could return the similar SQL with modifications, but for now, continue with normal flow
             
-            # Find most relevant tables for this query
+            # Find most relevant tables for this query using sentence transformers
             relevant_tables = embedding_manager.find_relevant_tables(prompt, top_k=8)
             
             if relevant_tables:
-                print(f"📊 Using embeddings: Found {len(relevant_tables)} relevant tables")
+                print(f"📊 Using sentence transformer embeddings: Found {len(relevant_tables)} relevant tables")
                 
                 # Build focused schema text with only relevant tables
                 focused_schema = []
@@ -102,20 +112,31 @@ def english_to_sql(prompt, chat_context=None):
                         print(f"  • {table_key} (relevance: {similarity:.3f})")
                 
                 if focused_schema:
-                    relevant_schema_text = "Relevant tables for your query:\n" + "\n".join(focused_schema)
+                    relevant_schema_text = "Relevant tables for your query (selected using sentence transformer embeddings):\n" + "\n".join(focused_schema)
                     
         except Exception as e:
-            print(f"⚠️ Embedding error: {e}, falling back to full schema")
+            print(f"⚠️ Sentence transformer embedding error: {e}, falling back to full schema")
 
     history_text = ""
     if chat_context:
         for entry in reversed(chat_context.history):
             history_text += f"User: {entry['user']}\nBot: {entry.get('response', '')}\n"
 
+    # Get distance conversion information
+    distance_info = ""
+    if DISTANCE_CONVERSION_AVAILABLE:
+        try:
+            distance_info = get_distance_conversion_info()
+        except Exception as e:
+            print(f"⚠️ Error getting distance conversion info: {e}")
+            distance_info = ""
+
     full_prompt = f"""
 You are an intelligent SQL assistant for multiple PostgreSQL schemas.
 
 {relevant_schema_text}
+
+{distance_info}
 
 Always use PostgreSQL-compatible datetime functions like EXTRACT(), DATE_TRUNC(), and TO_CHAR() instead of SQLite functions like strftime().
 
@@ -176,6 +197,75 @@ If the user asks a question that appears to follow from a previous result, list,
 - If the user asks about "latest trips", you must:
   - Check the max value of the trip/alert date column
   - Use `DATE_TRUNC()` to find the most recent full month
+
+---
+
+🚩 **DISTANCE UNIT CONVERSION - CRITICAL INSTRUCTIONS**:
+
+**⚠️ IMPORTANT**: Most distance columns in this database store values in METERS by default. When users ask for distances in kilometers, you MUST convert them.
+
+**Auto-Detection Rules**:
+1. When user mentions "km", "kilometers", "kilometer" → Convert meters to km using: `ROUND((column_name::NUMERIC / 1000), 2)`
+2. When user mentions "meters", "metres", "m" → Use raw values if already in meters
+3. For vehicle mileage/odometer → Usually already in kilometers
+
+**Conversion SQL Examples**:
+- User asks: "total distance in km" → Use: `ROUND((distance_column::NUMERIC / 1000), 2) AS distance_km`
+- User asks: "show mileage" → Use column as-is (usually already km)
+- User asks: "distance in meters" → Use raw column if stored in meters
+
+**Smart Response**: Always mention the conversion in your response.
+- ✅ "Here's the total distance in kilometers (converted from meters):"
+- ✅ "Vehicle mileage is already stored in kilometers:"
+- ✅ "Distance values converted from meters to kilometers as requested:"
+
+---
+
+🏭 **PLANT & HIERARCHY QUERY GUIDANCE - CRITICAL:**
+
+**⚠️ STRICT RULES - ALWAYS FOLLOW:**
+
+**For PLANT queries:**
+- **ALWAYS use `hosp_master` table** for plant data
+- **Plant ID**: `hm.id_no`
+- **Plant Name**: `hm.name` (NOT plant_code)
+- **Plant Address**: `hm.address`
+- **Region Link**: `hm.id_dist` (connects to district_master)
+
+**For REGION queries:**
+- **ALWAYS use `district_master` table** for regions
+- **Region Name**: `dm.name`
+- **Zone Link**: `dm.id_zone` (connects to zone_master)
+
+**For ZONE queries:**
+- **ALWAYS use `zone_master` table** for zones
+- **Zone Name**: `zm.zone_name`
+
+**HIERARCHY SQL Examples:**
+```sql
+-- Plants in Punjab region:
+SELECT hm.name as plant_name, hm.address 
+FROM hosp_master hm 
+JOIN district_master dm ON hm.id_dist = dm.id_no 
+WHERE dm.name ILIKE '%punjab%' 
+LIMIT 50;
+
+-- Plant for specific ID:
+SELECT hm.name, hm.address 
+FROM hosp_master hm 
+WHERE hm.id_no = 460;
+
+-- All plants:
+SELECT hm.name, hm.id_no, hm.address 
+FROM hosp_master hm 
+WHERE hm.name IS NOT NULL 
+LIMIT 50;
+```
+
+**❌ NEVER USE:**
+- `plant_schedule`, `plant_master` for plant data
+- `vehicle_location_shifting` for region data
+- Always use the hierarchical tables listed above
 
 ---
 
@@ -253,12 +343,12 @@ User: {prompt}
         response = model.generate_content(full_prompt).text
         result = extract_json(response)
         
-        # Store successful query patterns for future use
-        if EMBEDDINGS_AVAILABLE and result.get("sql"):
+        # Store successful query patterns for future use with sentence transformers
+        if EMBEDDINGS_AVAILABLE and embedding_manager and result.get("sql"):
             try:
                 embedding_manager.add_query_pattern(prompt, result["sql"], success=True)
             except Exception as e:
-                print(f"⚠️ Failed to store query pattern: {e}")
+                print(f"⚠️ Failed to store query pattern in sentence transformer embeddings: {e}")
         
         return result
     except Exception:
@@ -347,75 +437,65 @@ Return your answer in the most appropriate format as described above.
 
 
 def gemini_direct_answer(prompt, chat_context=None):
-    history_text = ""
-    if chat_context and hasattr(chat_context, 'history'):
-        for entry in reversed(chat_context.history):
-            history_text += f"User: {entry['user']}\nBot: {entry.get('response', '')}\n"
-    comparison_context = ""
-    if chat_context and chat_context.last_result_summary:
-        last_summary = chat_context.last_result_summary
-        columns = last_summary.get("columns", [])
-        rows = last_summary.get("rows", [])
-        last_user_q = last_summary.get("user_question", "")
-        preview = json.dumps(rows[:5], indent=2) if rows else "[]"
-        colnames = ", ".join(columns) if columns else "none"
-        if len(rows) >= 2 and len(columns) >= 2:
-            entity_col = columns[0]
-            value_col = columns[1] if len(columns) > 1 else None
-            comparison_context = (
-                f"The last result was a comparison between these entities based on '{value_col}':\n" +
-                "\n".join([f"- {row[entity_col]}: {row[value_col]}" for row in rows]) +
-                "\n\nIf the user asks 'which one is better?' or 'which one has better revenue?', answer based on this comparison."
-            )
-        entities_info = ""
-        if chat_context.last_result_entities:
-            top_entities = ", ".join(chat_context.last_result_entities[:5])
-            entities_info = f"\nThe last result included key values such as: {top_entities}."
-        result_context = (
-            f"The last structured query came from the question: '{last_user_q}'.\n"
-            f"It returned the following columns: {colnames}.{entities_info}\n\n"
-            f"Sample of the data:\n{preview}\n"
-        )
-    else:
-        result_context = "There is no structured result saved from the last query."
-    full_prompt = (
-        "You are a helpful conversational assistant. Use the conversation history and the result context to understand what the user is referring to.\n\n"
-        f"{comparison_context}\n\n"
-        "Important:\n"
-        "- If the user says things like \"this data\", \"that table\", \"filter this\", etc., refer to the **most recent structured query output** (columns and context).\n"
-        "- Do NOT make up data or regenerate summaries unless explicitly asked.\n"
-        "- If unsure, politely ask the user to clarify what data they want to continue with.\n"
-        "- Only use previous result if user's follow-up clearly refers to it using overlapping terms (e.g. \"this\", \"these\", \"filter\", or repeats previous columns/entities).\n"
-        "- If user's new question is **independent**, answer it fresh without using the last result.\n"
-        "- If the user's query is a clarification/confirmation like \"are you sure?\", \"is that correct?\", \"can you verify?\", then respond accordingly:\n"
-        "   - Confirm the based on the last result if you are confident.\n"
-        "   - Or say: \"Let me double-check...\" and re-evaluate the last result.\n"
-        "- Avoid using outdated context unless the user explicitly refers back to an earlier topic.\n"
-        "- Do NOT say \"I don't know\" if the data is present.\n"
-        "- Only say \"no data available\" if the last result clearly lacks that field or row.\n"
-        "- If a new question is unrelated (e.g., changes topic completely), start fresh.\n\n"
-        "- Always be aware that certain terms or phrases (e.g., \"maximum duration\", \"total amount\", \"count\", \"usage\", \"activity\") can have **multiple interpretations** depending on context.\n"
-        "- If you detect ambiguity (e.g., \"duration\" could mean predefined vs calculated), briefly clarify what you're using.\n\n"
-        "- When such a term appears, do the following:\n"
-        "   1. Infer the most likely meaning based on the **current question**,\n"
-        "   2. Compare it to what was previously asked in the conversation.\n"
-        "   3. If the meaning may differ (e.g., the same word could refer to a different table or concept), clearly **explain the distinction**.\n\n"
-        "- For example, \"duration\" might refer to:\n"
-        "   - A **predefined value** stored in a metadata table,\n"
-        "   - A **computed value** based on timestamps (e.g., end_time - start_time),\n"
-        "   - A **user-defined period**, based on filters or ranges.\n\n"
-        "- If the user switches from talking about one entity (like \"product\") to another (like \"customer\"), and reuses similar terms (e.g., \"usage\", \"duration\", \"amount\"), you must clarify whether their intent has shifted.\n\n"
-        "- In all such cases, briefly explain the **contextual meaning** of the value you're returning, and what field or logic it came from.\n\n"
-        f"{result_context}\n\n"
-        "Conversation history:\n"
-        f"{history_text}\n\n"
-        f"User: {prompt}\n"
-    )
+    """Handle general questions with conversation context awareness"""
+    
+    # Add conversation context for better understanding
+    context_info = ""
+    if chat_context:
+        # If chat_context is a list (from streamlit session state)
+        if isinstance(chat_context, list):
+            recent_history = []
+            for entry in chat_context[-3:]:  # Last 3 interactions
+                recent_history.append(f"User: {entry.get('user', '')}")
+                recent_history.append(f"Bot: {entry.get('response', '')}")
+            context_info = f"\nCONVERSATION CONTEXT:\n" + "\n".join(recent_history) + "\n"
+    
+    full_prompt = f"""
+You are a helpful AI assistant for a fleet management and transportation system with excellent conversation memory.
+
+{context_info}
+
+Please answer the user's question helpfully and naturally. You can assist with:
+- General questions about fleet management, vehicles, drivers, maintenance, etc.
+- Follow-up questions based on previous conversation
+- Clarifications about previous responses
+- General information and explanations
+
+Be conversational, helpful, and reference previous context when relevant.
+
+User Question: {prompt}
+
+Provide a clear, helpful response:
+"""
+    
     try:
         response = model.generate_content(full_prompt)
-        return response.text.strip()
+        answer = response.text.strip()
+        return answer
     except Exception as e:
-        return f"Gemini error: {e}"
+        return f"I'm sorry, I encountered an error: {e}"
+
+def validate_sql_query(sql_query):
+    """
+    Simple validation for SQL query - enhanced version just validates basic structure.
+    Returns (is_valid, error_message, suggested_sql)
+    """
+    if not sql_query or sql_query.strip() == "":
+        return True, None, None
+    
+    # Basic SQL structure validation
+    sql_lower = sql_query.lower().strip()
+    
+    # Check for dangerous operations
+    dangerous_keywords = ['drop', 'delete', 'truncate', 'alter', 'create', 'insert', 'update']
+    if any(keyword in sql_lower for keyword in dangerous_keywords):
+        return False, "Query contains potentially dangerous operations", None
+    
+    # Must start with SELECT
+    if not sql_lower.startswith('select'):
+        return False, "Query must start with SELECT", None
+    
+    return True, None, None
 
 # Add ChatContext class for Flask integration
 class ChatContext:

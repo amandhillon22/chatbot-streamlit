@@ -11,36 +11,52 @@ class EnhancedTableMapper:
     """Advanced table mapping with multiple strategies"""
     
     def __init__(self):
-        # High-priority keyword mappings - these should ALWAYS be preferred
+        # High-priority keyword mappings - HIERARCHICAL ONLY
         self.priority_mappings = {
             # CRM and Customer Management
-            'site visit': ['crm_site_visit_dtls', 'site_visit_history', 'visit_details'],
-            'customer complaint': ['customer_complaints', 'complaint_details', 'crm_complaints'],
-            'complaint': ['customer_complaints', 'complaint_details', 'crm_complaints'],
+            'site visit': ['crm_site_visit_dtls'],
+            'customer complaint': ['customer_complaints'],
+            'complaint': ['customer_complaints'],
             'site visit details': ['crm_site_visit_dtls'],
-            'visit details': ['crm_site_visit_dtls', 'visit_history'],
+            'visit details': ['crm_site_visit_dtls'],
             
-            # Vehicle Management - HIERARCHICAL
-            'vehicle': ['vehicle_master', 'mega_trips', 'drv_veh_qr_assign'],
-            'truck': ['vehicle_master', 'mega_trips'],
-            'fleet': ['vehicle_master', 'mega_trips'],
+            # HIERARCHICAL STRUCTURE - ABSOLUTE ENFORCEMENT
+            'vehicle': ['vehicle_master'],     # ONLY vehicle_master
+            'vehicles': ['vehicle_master'],    # ONLY vehicle_master
+            'truck': ['vehicle_master'],       # ONLY vehicle_master
+            'trucks': ['vehicle_master'],      # ONLY vehicle_master
+            'fleet': ['vehicle_master'],       # ONLY vehicle_master
             
-            # Plant and Location - ENHANCED HIERARCHICAL
-            'plant': ['hosp_master', 'plant_schedule', 'plant_master'],
-            'plant name': ['hosp_master', 'plant_schedule', 'plant_master'],
-            'plant id': ['hosp_master', 'plant_schedule', 'plant_master'],
-            'plant details': ['hosp_master', 'plant_schedule', 'plant_master'],
-            'hospital': ['hosp_master'],
-            'facility': ['hosp_master'],
-            'site': ['hosp_master', 'plant_schedule'],
-            'mohali plant': ['hosp_master', 'plant_schedule', 'plant_master'],
+            'plant': ['hosp_master'],          # ONLY hosp_master
+            'plants': ['hosp_master'],         # ONLY hosp_master
+            'hospital': ['hosp_master'],       # ONLY hosp_master
+            'hospitals': ['hosp_master'],      # ONLY hosp_master
+            'facility': ['hosp_master'],       # ONLY hosp_master
+            'facilities': ['hosp_master'],     # ONLY hosp_master
             
-            # Region and Zone - HIERARCHICAL
-            'region': ['district_master', 'vehicle_master', 'vehicle_location_shifting'],
-            'district': ['district_master'],
-            'zone': ['zone_master', 'district_master'],
-            'location': ['district_master', 'hosp_master', 'vehicle_location_shifting', 'plant_schedule'],
-            'area': ['district_master', 'zone_master'],
+            'region': ['district_master'],     # ONLY district_master
+            'regions': ['district_master'],    # ONLY district_master
+            'district': ['district_master'],   # ONLY district_master
+            'districts': ['district_master'],  # ONLY district_master
+            
+            'zone': ['zone_master'],           # ONLY zone_master
+            'zones': ['zone_master'],          # ONLY zone_master
+            'area': ['zone_master'],           # ONLY zone_master
+            'areas': ['zone_master'],          # ONLY zone_master
+            
+            # Specific queries - HIERARCHICAL ONLY
+            'all regions': ['district_master'],
+            'show regions': ['district_master'],
+            'list regions': ['district_master'],
+            'all zones': ['zone_master'],
+            'show zones': ['zone_master'],
+            'list zones': ['zone_master'],
+            'all plants': ['hosp_master'],
+            'show plants': ['hosp_master'],
+            'list plants': ['hosp_master'],
+            'all vehicles': ['vehicle_master'],
+            'show vehicles': ['vehicle_master'],
+            'list vehicles': ['vehicle_master'],
             
             # Hierarchical Relationships
             'zone region': ['zone_master', 'district_master'],
@@ -64,20 +80,19 @@ class EnhancedTableMapper:
             'payment': ['payment_history', 'billing_master'],
         }
         
-        # Domain-specific table groups - ENHANCED HIERARCHICAL
+        # Domain-specific table groups - HIERARCHICAL ONLY
         self.table_domains = {
-            'crm': ['crm_site_visit_dtls', 'customer_complaints', 'crm_complaints'],
-            'vehicle': ['vehicle_master', 'mega_trips', 'vehicle_breakdown'],
-            'driver': ['driver_master', 'drv_veh_qr_assign'],
-            'plant': ['hosp_master', 'plant_schedule', 'plant_master', 'plant_data'],
-            'region': ['district_master', 'vehicle_master'],
-            'zone': ['zone_master', 'district_master'],
+            'crm': ['crm_site_visit_dtls', 'customer_complaints'],
+            'vehicle': ['vehicle_master'],                          # ONLY vehicle_master
+            'plant': ['hosp_master'],                              # ONLY hosp_master
+            'region': ['district_master'],                         # ONLY district_master
+            'zone': ['zone_master'],                               # ONLY zone_master
             'hierarchy': ['zone_master', 'district_master', 'hosp_master', 'vehicle_master'],
             'maintenance': ['veh_maintain', 'tc_maintenances'],
             'financial': ['billing_master', 'payment_history'],
         }
         
-        # Exact table name aliases - ENHANCED HIERARCHICAL
+        # Exact table name aliases - HIERARCHICAL ONLY
         self.table_aliases = {
             'site_visit': 'crm_site_visit_dtls',
             'site_visits': 'crm_site_visit_dtls',
@@ -87,10 +102,13 @@ class EnhancedTableMapper:
             'complaint': 'customer_complaints',
             'zones': 'zone_master',
             'districts': 'district_master',
-            'regions': 'district_master',
+            'regions': 'district_master',        # FORCE district_master
             'hospitals': 'hosp_master',
-            'plants': 'hosp_master',
+            'plants': 'hosp_master',            # FORCE hosp_master
             'facilities': 'hosp_master',
+            'vehicles': 'vehicle_master',       # FORCE vehicle_master
+            'trucks': 'vehicle_master',
+            'fleet': 'vehicle_master',
         }
         
         # Hierarchical phrase patterns
@@ -177,7 +195,11 @@ class EnhancedTableMapper:
         return sorted(matches, key=lambda x: x[1], reverse=True)
     
     def rank_tables(self, query: str, embedding_results: List, available_tables: List[str]) -> List[Tuple[str, float, str]]:
-        """Combine multiple strategies to rank tables"""
+        """Combine multiple strategies to rank tables - WITH LEGACY FILTERING"""
+        
+        # FIRST: Filter out all legacy tables from available_tables
+        available_tables = self.filter_legacy_tables(available_tables)
+        print(f"🛡️ FILTERED AVAILABLE TABLES: {len(available_tables)} tables remain after legacy filtering")
         
         # Strategy 1: Priority keyword matching (highest weight)
         priority_tables = self.get_priority_tables(query)
@@ -185,8 +207,14 @@ class EnhancedTableMapper:
         # Strategy 2: Fuzzy matching
         fuzzy_matches = self.fuzzy_match_tables(query, available_tables)
         
-        # Strategy 3: Embedding results (existing system)
-        embedding_tables = [(table[0], table[1]) for table in embedding_results]
+        # Strategy 3: Embedding results (but filter them too)
+        embedding_tables = []
+        for table in embedding_results:
+            if len(table) >= 2:
+                table_name, score = table[0], table[1]
+                # Filter out legacy tables from embedding results too
+                if table_name in available_tables:  # Only include if it passed legacy filter
+                    embedding_tables.append((table_name, score))
         
         # Combine and weight the results
         final_ranking = {}
@@ -227,6 +255,27 @@ class EnhancedTableMapper:
         ranked_tables.sort(key=lambda x: x[1], reverse=True)
         
         return ranked_tables[:8]  # Return top 8
+    
+    def filter_legacy_tables(self, tables: List[str]) -> List[str]:
+        """COMPLETELY remove legacy tables from any table list"""
+        legacy_tables = {
+            'vehicle_location_shifting',
+            'app_regions', 
+            'plant_schedule',
+            'plant_master'
+        }
+        
+        filtered_tables = []
+        for table in tables:
+            # Extract table name without schema prefix
+            table_name = table.split('.')[-1] if '.' in table else table
+            
+            if table_name not in legacy_tables:
+                filtered_tables.append(table)
+            else:
+                print(f"🚫 FILTERED OUT LEGACY TABLE: {table}")
+        
+        return filtered_tables
 
 def test_enhanced_mapping():
     """Test the enhanced mapping system"""
@@ -243,7 +292,8 @@ def test_enhanced_mapping():
     # Mock available tables (you'd get this from your schema)
     available_tables = [
         'crm_site_visit_dtls', 'customer_complaints', 'vehicle_master',
-        'mega_trips', 'plant_schedule', 'veh_maintain', 'non_sales_history'
+        'mega_trips', 'hosp_master', 'veh_maintain', 'non_sales_history',
+        'zone_master', 'district_master'
     ]
     
     for query in test_queries:

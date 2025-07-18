@@ -11,40 +11,50 @@ from sql import get_full_schema, get_column_types, get_numeric_columns
 try:
     from create_lightweight_embeddings import LightweightEmbeddingManager
     from enhanced_table_mapper import EnhancedTableMapper
-    
-    def initialize_embeddings():
-        """Initialize the lightweight embedding manager"""
-        try:
-            if os.path.exists('embeddings_cache.pkl'):
-                import pickle
-                with open('embeddings_cache.pkl', 'rb') as f:
-                    data = pickle.load(f)
-                manager = LightweightEmbeddingManager()
-                manager.schema_embeddings = data.get('schema_embeddings', {})
-                manager.table_descriptions = data.get('table_descriptions', {})
-                manager.query_patterns = data.get('query_patterns', {})
-                manager.fitted_vectorizer = data.get('vectorizer', None)
-                print(f"📂 Loaded embeddings for {len(manager.schema_embeddings)} tables")
-                return manager
-            else:
-                print("⚠️ No embeddings cache found")
-                return None
-        except Exception as e:
-            print(f"⚠️ Error loading embeddings: {e}")
-            return None
-    
     EMBEDDINGS_AVAILABLE = True
-    print("✅ Lightweight embeddings module loaded successfully")
-except ImportError as e:
-    print(f"⚠️ Embeddings not available: {e}")
+except ImportError:
     EMBEDDINGS_AVAILABLE = False
 
-# Initialize enhanced table mapper
+# Import distance unit conversion functionality
 try:
-    enhanced_table_mapper = EnhancedTableMapper()
-    print("✅ Enhanced table mapper initialized")
-except Exception as e:
-    print(f"⚠️ Enhanced table mapper not available: {e}")
+    from distance_units import get_distance_conversion_info, get_distance_columns_info
+    DISTANCE_CONVERSION_AVAILABLE = True
+    print("✅ Distance unit conversion system loaded successfully")
+except ImportError as e:
+    print(f"⚠️ Distance unit conversion not available: {e}")
+    DISTANCE_CONVERSION_AVAILABLE = False
+
+def initialize_embeddings():
+    """Initialize the lightweight embedding manager"""
+    try:
+        if os.path.exists('embeddings_cache.pkl'):
+            import pickle
+            with open('embeddings_cache.pkl', 'rb') as f:
+                data = pickle.load(f)
+            manager = LightweightEmbeddingManager()
+            manager.schema_embeddings = data.get('schema_embeddings', {})
+            manager.table_descriptions = data.get('table_descriptions', {})
+            manager.query_patterns = data.get('query_patterns', {})
+            manager.fitted_vectorizer = data.get('vectorizer', None)
+            print(f"📂 Loaded embeddings for {len(manager.schema_embeddings)} tables")
+            return manager
+        else:
+            print("⚠️ No embeddings cache found")
+            return None
+    except Exception as e:
+        print(f"⚠️ Error loading embeddings: {e}")
+        return None
+
+# Initialize enhanced table mapper for embeddings
+if EMBEDDINGS_AVAILABLE:
+    try:
+        enhanced_table_mapper = EnhancedTableMapper()
+        print("✅ Enhanced table mapper initialized")
+    except Exception as e:
+        print(f"⚠️ Enhanced table mapper not available: {e}")
+        enhanced_table_mapper = None
+        EMBEDDINGS_AVAILABLE = False
+else:
     enhanced_table_mapper = None
 
 # Import intelligent reasoning
@@ -215,106 +225,206 @@ def english_to_sql(prompt, chat_context=None):
     else:
         history_text = ""
 
-    # 🏭 ENHANCED PLANT-VEHICLE QUERY HANDLING
-    if re.search(r'\b(plant|site|customer|location)\b', prompt, re.IGNORECASE):
+    # 🏭 STRICT HIERARCHICAL PLANT GUIDANCE 
+    if re.search(r'\b(plant|site|hospital|facility|factory|location|mohali|ludhiana|derabassi|punjab|gujarat|maharashtra)\b', prompt, re.IGNORECASE):
         plant_guidance = """
-🏭 **PLANT QUERY GUIDANCE - CRITICAL:**
-For plant name queries:
-1. **PLANT NAME**: Use site_name or cust_name from plant_schedule (NOT plant_code)
-2. **PLANT ID TO NAME**: SELECT plant_id, site_name, cust_name, plant_code FROM plant_schedule WHERE plant_id = X
-3. **PLANT NAME TO ID**: SELECT plant_id, site_name, cust_name FROM plant_schedule WHERE site_name ILIKE '%name%' OR cust_name ILIKE '%name%'
-4. **SITE VISITS BY PLANT**: JOIN crm_site_visit_dtls WITH plant_schedule ON plant_id
+🏭 **PLANT QUERY GUIDANCE - CRITICAL CLARIFICATION:**
 
-⚠️ IMPORTANT: 
-- plant_code (like 'MU7') is NOT the plant name
-- site_name and cust_name contain the actual descriptive plant names
-- When user asks for "plant name", show site_name or cust_name, NOT plant_code
+⚠️ **MOST IMPORTANT**: hosp_master table is **PLANT MASTER**, NOT hospital master!
+- Despite the name "hosp_master", this table contains **PLANT/FACILITY DATA**
+- Contains: Plant names, plant locations, factory information, site details
+- **NEVER** interpret as medical hospitals or healthcare facilities
 
-For plant/site/customer queries related to vehicles:
-1. Use JOIN between mega_trips and plant_schedule tables
-2. mega_trips.plant_id = plant_schedule.plant_id (both are integers)
-3. Available plant fields: plant_code, cust_name, site_name, fse_name, etc.
-4. NEVER use vehicle registration number as plant_id
+✅ **ALWAYS USE hosp_master for ALL plant/facility queries**
+- Plant ID: hm.id_no
+- Plant Name: hm.name (e.g., "PB-Mohali", "PB-Ludhiana", "PB-Derabassi")
+- Plant Address: hm.address
+- District Link: hm.id_dist (links to district_master.id_no)
 
-Examples:
-- "What plant does vehicle X belong to?" → SELECT ps.plant_code, ps.cust_name FROM mega_trips mt JOIN plant_schedule ps ON mt.plant_id = ps.plant_id WHERE mt.reg_no = 'X'
-- "Plant name for plant ID 460" → SELECT site_name, cust_name FROM plant_schedule WHERE plant_id = 460
-- "Site visit details for Mohali plant" → SELECT csv.* FROM crm_site_visit_dtls csv JOIN plant_schedule ps ON csv.plant_id = ps.plant_id WHERE ps.site_name ILIKE '%mohali%'
+🎯 **PLANT QUERY EXAMPLES:**
+- "Show all plants" → SELECT hm.name, hm.id_no FROM hosp_master hm WHERE hm.name IS NOT NULL
+- "Plant name for ID 460" → SELECT hm.name, hm.address FROM hosp_master hm WHERE hm.id_no = 460
+- "Plants in Punjab" → SELECT hm.name FROM hosp_master hm JOIN district_master dm ON hm.id_dist = dm.id_no WHERE dm.name ILIKE '%Punjab%'
+- "Vehicles in Mohali plant" → SELECT vm.reg_no FROM vehicle_master vm JOIN hosp_master hm ON vm.id_hosp = hm.id_no WHERE hm.name ILIKE '%mohali%'
+
+🚛 **VEHICLES OF PLANT QUERIES - CRITICAL:**
+- "Vehicles of Mohali plant" → SELECT vm.reg_no FROM vehicle_master vm JOIN hosp_master hm ON vm.id_hosp = hm.id_no WHERE hm.name ILIKE '%mohali%'
+- "Show vehicles of [plant name]" → SELECT vm.reg_no, vm.bus_id FROM vehicle_master vm JOIN hosp_master hm ON vm.id_hosp = hm.id_no WHERE hm.name ILIKE '%[plant name]%'
+- "Vehicles in plant ID X" → SELECT vm.reg_no FROM vehicle_master vm WHERE vm.id_hosp = X
+
+⚠️ **CRITICAL**: When user asks for "vehicles of [plant name]", ALWAYS:
+1. Use vehicle_master table for vehicles
+2. JOIN with hosp_master to find plant by name
+3. Use ILIKE '%plant_name%' for flexible name matching
+4. Show reg_no (registration number) as primary vehicle identifier
+5. **REMEMBER**: hosp_master = plant data, NOT hospital data
+
+❌ **NEVER USE**: plant_schedule, plant_master, or any other table for plant data
+❌ **NEVER ASSUME**: hosp_master contains hospital/medical data - it's PLANT data!
 """
     else:
         plant_guidance = ""
 
-    # 🚀 ENHANCED HIERARCHICAL QUERY HANDLING (Zone → Region → Plant → Vehicle)
+    # 🚀 CRITICAL ID RELATIONSHIP ENFORCEMENT
+    id_relationship_guide = """
+🔗 **MANDATORY ID RELATIONSHIPS - NEVER MISS THESE:**
+
+**CORE HIERARCHICAL CHAIN (ALWAYS USE THESE EXACT JOINS):**
+zone_master.id_no ← district_master.id_zone ← hosp_master.id_dist ← vehicle_master.id_hosp
+
+**EXACT JOIN SYNTAX:**
+```sql
+-- Complete hierarchy from vehicle to zone:
+FROM vehicle_master vm
+LEFT JOIN hosp_master hm ON vm.id_hosp = hm.id_no        -- CRITICAL: id_hosp relationship
+LEFT JOIN district_master dm ON hm.id_dist = dm.id_no    -- CRITICAL: id_dist relationship  
+LEFT JOIN zone_master zm ON dm.id_zone = zm.id_no        -- CRITICAL: id_zone relationship
+```
+
+🔑 **CRITICAL COLUMN NAMES - USE EXACTLY THESE:**
+- **zone_master**: Use `zone_name` (NOT `name`)
+- **district_master**: Use `name` (for region names) 
+- **hosp_master**: Use `name` (for plant names)
+- **vehicle_master**: Use `reg_no` (for registration numbers)
+
+🎯 **SMART LOCATION DETECTION - CRITICAL LOGIC:**
+When user mentions a location (e.g., "Gujarat", "Maharashtra", "West Bengal"):
+1. **FIRST**: Check if it's a DISTRICT/STATE name → Use district_master.name
+2. **SECOND**: Only if not found, check if it's a ZONE name → Use zone_master.zone_name
+3. **AVOID**: Unnecessary joins to zone_master if the location is actually a district
+
+**LOCATION QUERY EXAMPLES:**
+```sql
+-- For "Plants in Gujarat" - Check district first:
+SELECT hm.name 
+FROM hosp_master hm 
+JOIN district_master dm ON hm.id_dist = dm.id_no 
+WHERE dm.name ILIKE '%Gujarat%'
+
+-- Only use zone_master if specifically asking for zone or if district search fails:
+SELECT hm.name 
+FROM hosp_master hm 
+JOIN district_master dm ON hm.id_dist = dm.id_no 
+JOIN zone_master zm ON dm.id_zone = zm.id_no 
+WHERE zm.zone_name ILIKE '%Gujarat%'
+```
+
+⚠️ **MANDATORY RULES:**
+1. **vehicle_master.id_hosp** MUST link to **hosp_master.id_no**
+2. **hosp_master.id_dist** MUST link to **district_master.id_no**
+3. **district_master.id_zone** MUST link to **zone_master.id_no**
+4. NEVER skip these relationships - they ensure complete data integrity
+5. ALWAYS use correct column names: zm.zone_name, dm.name, hm.name, vm.reg_no
+6. **SMART LOCATION**: Start with district_master for location names, only use zone_master when needed
+
+**COMMON QUERY PATTERNS:**
+- Vehicle → Plant: JOIN hosp_master hm ON vm.id_hosp = hm.id_no
+- Plant → Region: JOIN district_master dm ON hm.id_dist = dm.id_no
+- Region → Zone: JOIN zone_master zm ON dm.id_zone = zm.id_no
+- Vehicle → Full Hierarchy: Use all three joins above
+
+**EXAMPLE: Plants in a Location (SMART DETECTION)**
+```sql
+-- PREFERRED: Try district_master first (most locations are districts/states)
+SELECT hm.name 
+FROM hosp_master hm 
+JOIN district_master dm ON hm.id_dist = dm.id_no 
+WHERE dm.name ILIKE '%Gujarat%'
+
+-- FALLBACK: Only if district fails, try zone_master
+SELECT hm.name 
+FROM hosp_master hm 
+JOIN district_master dm ON hm.id_dist = dm.id_no 
+JOIN zone_master zm ON dm.id_zone = zm.id_no 
+WHERE zm.zone_name ILIKE '%Gujarat%'
+```
+
+⚠️ **CRITICAL**: If asking for vehicles of a plant/region/zone, ALWAYS include the complete join chain to ensure NO vehicles are missed!
+"""
+
+    # 🚀 ABSOLUTE HIERARCHICAL ENFORCEMENT
     hierarchy_guidance = ""
     
-    # Zone queries
+    # Zone queries - ONLY zone_master
     if re.search(r'\b(zone)\b', prompt, re.IGNORECASE):
         hierarchy_guidance += """
-🌐 **ZONE HIERARCHY GUIDANCE:**
-For zone-related queries, use the hierarchical structure:
-- zone_master (zone_name, id_no) ← district_master (name, id_zone) ← hosp_master (name, id_dist) ← vehicle_master (reg_no, id_hosp)
+🌐 **ZONE QUERIES - ABSOLUTE RULE:**
+⚠️ **CRITICAL**: ALWAYS and ONLY use zone_master table for zone queries
+❌ **NEVER USE**: Any other table for zone data
+🔑 **ZONE COLUMN NAME**: Use `zone_name` NOT `name` for zone_master table
 
 Examples:
+- "Show all zones" → SELECT DISTINCT zone_name FROM zone_master WHERE zone_name IS NOT NULL
 - "What zone does vehicle X belong to?" → 
   SELECT zm.zone_name FROM zone_master zm 
   JOIN district_master dm ON zm.id_no = dm.id_zone 
   JOIN hosp_master hm ON dm.id_no = hm.id_dist 
   JOIN vehicle_master vm ON hm.id_no = vm.id_hosp 
   WHERE vm.reg_no = 'X'
-- "Show all zones" → SELECT zone_name FROM zone_master
-"""
-
-    # Region/District queries  
-    if re.search(r'\b(region|district|location|area)\b', prompt, re.IGNORECASE):
-        hierarchy_guidance += """
-� **REGION/DISTRICT HIERARCHY GUIDANCE:**
-For region/district queries, use the hierarchical structure:
-1. PRIMARY SOURCE: district_master.name (official regions/districts)
-2. SECONDARY SOURCE: vehicle_master.regional_name (vehicle-specific regions)
-3. HIERARCHY: zone_master ← district_master ← hosp_master ← vehicle_master
-
-Examples:
-- "What region does vehicle X belong to?" → 
-  SELECT dm.name as district_name, vm.regional_name FROM district_master dm 
-  JOIN hosp_master hm ON dm.id_no = hm.id_dist 
-  JOIN vehicle_master vm ON hm.id_no = vm.id_hosp 
-  WHERE vm.reg_no = 'X'
-- "Show all vehicles in region Y" → 
-  SELECT vm.reg_no FROM vehicle_master vm 
-  JOIN hosp_master hm ON vm.id_hosp = hm.id_no 
+- "Plants in Gujarat zone" → 
+  SELECT hm.name FROM hosp_master hm 
   JOIN district_master dm ON hm.id_dist = dm.id_no 
-  WHERE dm.name ILIKE '%Y%'
+  JOIN zone_master zm ON dm.id_zone = zm.id_no 
+  WHERE zm.zone_name = 'Gujarat'
 """
 
-    # Plant/Hospital queries
-    if re.search(r'\b(plant|hospital|site|facility)\b', prompt, re.IGNORECASE):
+    # Region/District queries - Smart location detection
+    if re.search(r'\b(region|district|state|gujarat|maharashtra|bengal|punjab|haryana|rajasthan|karnataka|tamil|andhra|kerala|odisha|bihar|uttar|madhya|jharkhand|chhattisgarh|assam|himachal|uttarakhand|goa|tripura|meghalaya|manipur|nagaland|mizoram|arunachal|sikkim|delhi|mumbai|bangalore|chennai|kolkata|hyderabad|pune|ahmedabad|surat|jaipur|lucknow|kanpur|bhopal|indore|agra|patna|vadodara|coimbatore|ludhiana|kochi|visakhapatnam|nashik|meerut|aurangabad|ranchi|howrah|gwalior|jabalpur|vijayawada|jodhpur|madurai|raipur|kota|chandigarh|guwahati|solapur|hubli|tiruchirappalli|belgaum|bhubaneswar|thiruvananthapuram)\b', prompt, re.IGNORECASE):
         hierarchy_guidance += """
-🏭 **PLANT/HOSPITAL HIERARCHY GUIDANCE:**
-For plant/hospital queries, use the hierarchical structure:
-- hosp_master.name (official plant/hospital names) with id_dist → district_master, id_zone → zone_master
-- Connection to vehicles via vehicle_master.id_hosp
+🏢 **REGION/DISTRICT/STATE QUERIES - SMART APPROACH:**
+⚠️ **CRITICAL**: For location names (Gujarat, Maharashtra, etc.), FIRST try district_master
+🎯 **SMART DETECTION**: Most Indian state/region names are in district_master.name, NOT zone_master
+❌ **DON'T**: Automatically use zone_master for all geographic queries
+
+🔑 **LOCATION QUERY LOGIC:**
+1. **PRIMARY**: Use district_master.name for state/region/district names
+2. **SECONDARY**: Only use zone_master.zone_name if specifically asking for zones
 
 Examples:
+- "Plants in Gujarat" → SELECT hm.name FROM hosp_master hm JOIN district_master dm ON hm.id_dist = dm.id_no WHERE dm.name ILIKE '%Gujarat%'
+- "Vehicles in Maharashtra" → SELECT vm.reg_no FROM vehicle_master vm JOIN hosp_master hm ON vm.id_hosp = hm.id_no JOIN district_master dm ON hm.id_dist = dm.id_no WHERE dm.name ILIKE '%Maharashtra%'
+- "Show all regions" → SELECT DISTINCT name FROM district_master WHERE name IS NOT NULL
+- "What region does vehicle X belong to?" → SELECT dm.name as region_name FROM district_master dm JOIN hosp_master hm ON dm.id_no = hm.id_dist JOIN vehicle_master vm ON hm.id_no = vm.id_hosp WHERE vm.reg_no = 'X'
+
+⚠️ **CRITICAL**: States like Gujarat, Maharashtra, West Bengal are typically in district_master.name, not zone_master.zone_name
+"""
+
+    # Plant/Hospital queries - ONLY hosp_master
+    if re.search(r'\b(plant|hospital|facility)\b', prompt, re.IGNORECASE):
+        hierarchy_guidance += """
+🏭 **PLANT QUERIES - ABSOLUTE RULE:**
+⚠️ **CRITICAL**: ALWAYS and ONLY use hosp_master table for plant queries
+⚠️ **IMPORTANT**: hosp_master contains PLANT DATA, not hospital/medical data!
+❌ **NEVER USE**: plant_schedule, plant_master, or any other table for plant data
+🔑 **PLANT COLUMN NAME**: Use `name` (NOT `plant_name`) for hosp_master table
+
+Examples:
+- "Show all plants" → SELECT DISTINCT name FROM hosp_master WHERE name IS NOT NULL
 - "What plant does vehicle X belong to?" → 
   SELECT hm.name as plant_name FROM hosp_master hm 
   JOIN vehicle_master vm ON hm.id_no = vm.id_hosp 
   WHERE vm.reg_no = 'X'
-- "Show all vehicles for plant Y" → 
+- "Plants in Punjab region" →
+  SELECT hm.name FROM hosp_master hm 
+  JOIN district_master dm ON hm.id_dist = dm.id_no 
+  WHERE dm.name ILIKE '%Punjab%'
+- "Vehicles in Mohali plant" →
   SELECT vm.reg_no FROM vehicle_master vm 
   JOIN hosp_master hm ON vm.id_hosp = hm.id_no 
-  WHERE hm.name ILIKE '%Y%'
+  WHERE hm.name ILIKE '%Mohali%'
+
+🔑 **REMEMBER**: hosp_master = PLANT/FACTORY data (NOT medical hospitals)
 """
 
-    # Vehicle hierarchy queries
+    # Vehicle hierarchy queries - ONLY vehicle_master
     if re.search(r'\b(vehicle|truck|fleet)\b', prompt, re.IGNORECASE):
         hierarchy_guidance += """
-🚛 **VEHICLE HIERARCHY GUIDANCE:**
-For vehicle queries, use the complete hierarchy:
-- vehicle_master connects to hosp_master via id_hosp
-- hosp_master connects to district_master via id_dist  
-- district_master connects to zone_master via id_zone
+🚛 **VEHICLE QUERIES - ABSOLUTE RULE:**
+⚠️ **CRITICAL**: ALWAYS and ONLY use vehicle_master table for vehicle queries
+❌ **NEVER USE**: mega_trips, drv_veh_qr_assign, or any other table for vehicle data unless specifically joining
 
 Examples:
+- "Show all vehicles" → SELECT DISTINCT reg_no FROM vehicle_master WHERE reg_no IS NOT NULL
 - "Show vehicle X with full hierarchy" → 
   SELECT vm.reg_no, hm.name as plant, dm.name as district, zm.zone_name 
   FROM vehicle_master vm 
@@ -384,10 +494,43 @@ Examples:
 
     schema_text = relevant_schema_text
 
+    # Get distance conversion information
+    distance_info = ""
+    if DISTANCE_CONVERSION_AVAILABLE:
+        try:
+            distance_info = get_distance_conversion_info()
+        except Exception as e:
+            print(f"⚠️ Error getting distance conversion info: {e}")
+            distance_info = ""
+
     full_prompt = f"""
 You are an intelligent SQL assistant for multiple PostgreSQL schemas with advanced conversation memory.
 
 {schema_text}
+
+🏭 **CRITICAL TABLE CLARIFICATIONS - NEVER MISINTERPRET:**
+
+⚠️ **MOST IMPORTANT**: `hosp_master` table contains **PLANT DATA**, NOT hospital data!
+- **hosp_master = PLANT MASTER TABLE** (despite the misleading name)
+- Contains: Plant names, plant IDs, plant addresses, plant locations
+- Use for: All plant-related queries, plant locations, facility information
+- **NEVER** interpret as hospital, medical facility, or healthcare data
+
+🔑 **CORRECT TABLE MEANINGS:**
+- **hosp_master**: PLANTS (factories, facilities, sites) - Use `hm.name` for plant names
+- **district_master**: REGIONS/DISTRICTS/STATES - Use `dm.name` for region names  
+- **zone_master**: ZONES (larger geographic areas) - Use `zm.zone_name` for zone names
+- **vehicle_master**: VEHICLES/TRUCKS/FLEET - Use `vm.reg_no` for vehicle registration
+
+📋 **QUERY INTERPRETATION RULES:**
+- "Show plants" → SELECT FROM hosp_master (NOT hospitals!)
+- "Vehicles in Mohali" → JOIN vehicle_master with hosp_master WHERE plant name ILIKE '%Mohali%'
+- "Plants in Punjab" → JOIN hosp_master with district_master WHERE region name ILIKE '%Punjab%'
+- **NEVER** assume hosp_master contains medical/hospital information
+
+{id_relationship_guide}
+
+{distance_info}
 
 {context_info}
 
@@ -432,8 +575,6 @@ Use the CONVERSATION CONTEXT and RECENT SQL QUERIES to understand:
 - What data the user is referring to
 - What scope they want (specific subset vs all data)
 - What their follow-up question is really asking for
-
-{schema_text}
 
 Always use PostgreSQL-compatible datetime functions like EXTRACT(), DATE_TRUNC(), and TO_CHAR() instead of SQLite functions like strftime().
 
@@ -965,6 +1106,46 @@ class ChatContext:
         """Get formatted context for LLM prompt - delegates to enhanced version"""
         return self.get_context_with_ordinal_awareness(current_question)
 
+def enforce_hierarchical_tables(sql_query):
+    """
+    SURGICALLY enforce hierarchical table usage - only replaces incorrect tables
+    """
+    if not sql_query:
+        return sql_query
+        
+    sql_lower = sql_query.lower()
+    
+    # Block specific legacy tables and replace them
+    legacy_replacements = {
+        'vehicle_location_shifting': 'district_master',
+        'app_regions': 'district_master', 
+        'plant_schedule': 'hosp_master',
+        'plant_master': 'hosp_master'
+    }
+    
+    modified = False
+    for legacy, correct in legacy_replacements.items():
+        if legacy in sql_lower:
+            print(f"🚫 BLOCKED: {legacy} - REPLACING with {correct}")
+            sql_query = sql_query.replace(legacy, correct)
+            modified = True
+            
+    # Fix common column name mismatches for the replaced tables
+    if modified:
+        column_fixes = {
+            'region_name': 'name as region_name',
+            'site_name': 'name as plant_name',
+            'cust_name': 'name as plant_name', 
+            'plant_code': 'name as plant_name'
+        }
+        
+        for old_col, new_col in column_fixes.items():
+            if old_col in sql_query:
+                sql_query = sql_query.replace(old_col, new_col)
+                print(f"🔧 FIXED COLUMN: {old_col} → {new_col}")
+    
+    return sql_query
+
 def validate_sql_query(sql_query):
     """
     Validates SQL query for column existence and suggests type casting for numeric text columns.
@@ -972,6 +1153,13 @@ def validate_sql_query(sql_query):
     """
     if not sql_query or sql_query.strip() == "":
         return True, None, None
+        
+    # First enforce hierarchical tables - ALWAYS return the corrected SQL
+    original_sql = sql_query
+    sql_query = enforce_hierarchical_tables(sql_query)
+    
+    # If hierarchical enforcement made changes, always return the corrected SQL
+    hierarchical_changed = (sql_query != original_sql)
         
     try:
         # Get all column types for validation
@@ -983,8 +1171,8 @@ def validate_sql_query(sql_query):
         # Also check for SUM, AVG, etc. on columns
         aggregate_patterns = re.findall(r'\b(SUM|AVG|MAX|MIN|COUNT)\s*\(\s*([^)]+)\s*\)', sql_query, re.IGNORECASE)
         
-        suggested_sql = sql_query
-        has_suggestions = False
+        suggested_sql = sql_query  # Start with the hierarchically-corrected SQL
+        has_suggestions = hierarchical_changed  # Mark as changed if hierarchical fixes were applied
         
         # Check aggregate functions and suggest type casting
         for func, column_expr in aggregate_patterns:

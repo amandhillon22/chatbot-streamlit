@@ -11,20 +11,58 @@ class IntelligentReasoning:
     """
     Adds intelligent contextual reasoning to the chatbot
     to understand implicit requests and auto-resolve data relationships
+    
+    CRITICAL TABLE CLARIFICATIONS:
+    - hosp_master = PLANT DATA (factories, facilities, sites) - NOT hospitals!
+    - district_master = REGIONS/DISTRICTS/STATES 
+    - zone_master = ZONES (larger geographic areas)
+    - vehicle_master = VEHICLES/TRUCKS/FLEET
     """
     
     def __init__(self):
+        # CRITICAL: Define the core hierarchical relationships using exact ID columns
+        # These ID relationships are MANDATORY and must NEVER be missed:
+        # zone_master.id_no ← district_master.id_zone ← hosp_master.id_dist ← vehicle_master.id_hosp
+        
+        # IMPORTANT: hosp_master contains PLANT DATA, not hospital data!
+        self.core_hierarchy = {
+            'zone_master': {
+                'primary_key': 'id_no',
+                'child_table': 'district_master',
+                'child_foreign_key': 'id_zone'
+            },
+            'district_master': {
+                'primary_key': 'id_no', 
+                'parent_table': 'zone_master',
+                'parent_foreign_key': 'id_zone',
+                'child_table': 'hosp_master',
+                'child_foreign_key': 'id_dist'
+            },
+            'hosp_master': {
+                'primary_key': 'id_no',
+                'parent_table': 'district_master', 
+                'parent_foreign_key': 'id_dist',
+                'child_table': 'vehicle_master',
+                'child_foreign_key': 'id_hosp'
+            },
+            'vehicle_master': {
+                'primary_key': 'id_no',
+                'parent_table': 'hosp_master',
+                'parent_foreign_key': 'id_hosp'
+            }
+        }
+        
         # Common data relationship patterns - ENHANCED HIERARCHICAL
         self.relationship_patterns = {
             'plant_name': {
                 'from_plant_id': {
-                    'source_tables': ['plant_master', 'plant_schedule'],
-                    'key_column': 'plant_id',
-                    'target_column': 'plant_name'
+                    'source_tables': ['hosp_master'],
+                    'key_column': 'id_no',
+                    'target_column': 'name'
                 },
                 'from_vehicle': {
                     'source_tables': ['hosp_master', 'vehicle_master'],
-                    'join_logic': 'JOIN vehicle_master vm ON vm.id_hosp = hm.id_no',
+                    'join_logic': 'JOIN hosp_master hm ON vm.id_hosp = hm.id_no',
                     'target_column': 'hm.name as plant_name'
                 }
             },
@@ -95,6 +133,23 @@ class IntelligentReasoning:
         
         # Intent patterns for auto-resolution - ENHANCED HIERARCHICAL
         self.intent_patterns = [
+            # Show all hierarchical entities patterns
+            {
+                'pattern': r'(?:show|list|all)\s+(?:all\s+)?(?:regions|districts)',
+                'intent': 'show_all_regions',
+                'extractor': self._extract_show_all_regions
+            },
+            {
+                'pattern': r'(?:show|list|all)\s+(?:all\s+)?(?:zones|areas)',
+                'intent': 'show_all_zones',
+                'extractor': self._extract_show_all_zones
+            },
+            {
+                'pattern': r'(?:show|list|all)\s+(?:all\s+)?(?:plants|hospitals|facilities)',
+                'intent': 'show_all_plants',
+                'extractor': self._extract_show_all_plants
+            },
+            
             # Zone hierarchy patterns
             {
                 'pattern': r'(?:zone|area).*(?:vehicle|truck)\s+([A-Z0-9-]+)',
@@ -125,6 +180,11 @@ class IntelligentReasoning:
                 'pattern': r'(?:vehicles|trucks).*(?:plant|hospital)\s+([A-Z0-9\s]+)',
                 'intent': 'get_vehicles_in_plant',
                 'extractor': self._extract_vehicles_in_plant
+            },
+            {
+                'pattern': r'(?:vehicles|trucks).*(?:of|in|at)\s+([a-zA-Z0-9\s\-]+?)(?:\s+plant|\s+hospital|$)',
+                'intent': 'get_vehicles_of_plant',
+                'extractor': self._extract_vehicles_of_plant_flexible
             },
             {
                 'pattern': r'(?:hierarchy|structure|relationship).*(?:vehicle|truck)\s+([A-Z0-9-]+)',
@@ -317,29 +377,27 @@ class IntelligentReasoning:
             
             plant_id = extracted_data.get('plant_id')
             if plant_id:
-                # Use site_name or cust_name as plant name since that seems to be the actual plant identifier
-                return f"""SELECT DISTINCT plant_id, plant_code, site_name, cust_name, fse_name
-                          FROM public.plant_schedule 
-                          WHERE plant_id = {plant_id} 
+                # Use hosp_master for plant information - STRICT HIERARCHICAL
+                return f"""SELECT DISTINCT hm.id_no as plant_id, hm.name as plant_name, hm.address
+                          FROM hosp_master hm  
+                          WHERE hm.id_no = {plant_id} 
                           LIMIT 5;"""
         
         elif intent == 'get_plant_id_from_name':
             plant_name = extracted_data.get('plant_name')
             if plant_name:
-                return f"""SELECT DISTINCT plant_id, plant_code, site_name, cust_name, fse_name
-                          FROM public.plant_schedule 
-                          WHERE site_name ILIKE '%{plant_name}%' OR cust_name ILIKE '%{plant_name}%' OR plant_code ILIKE '%{plant_name}%'
+                return f"""SELECT DISTINCT hm.id_no as plant_id, hm.name as plant_name, hm.address
+                          FROM hosp_master hm 
+                          WHERE hm.name ILIKE '%{plant_name}%'
                           LIMIT 10;"""
         
         elif intent == 'get_site_visit_for_plant':
             plant_reference = extracted_data.get('plant_reference')
             if plant_reference:
-                return f"""SELECT DISTINCT csv.*, ps.site_name, ps.cust_name, ps.plant_code
+                return f"""SELECT DISTINCT csv.*, hm.name as plant_name, hm.address
                           FROM public.crm_site_visit_dtls csv
-                          JOIN public.plant_schedule ps ON csv.plant_id = ps.plant_id
-                          WHERE ps.site_name ILIKE '%{plant_reference}%' 
-                             OR ps.cust_name ILIKE '%{plant_reference}%' 
-                             OR ps.plant_code ILIKE '%{plant_reference}%'
+                          JOIN hosp_master hm ON csv.plant_id = hm.id_no
+                          WHERE hm.name ILIKE '%{plant_reference}%'
                           LIMIT 10;"""
         
         elif intent == 'get_customer_name_from_id':
@@ -369,6 +427,7 @@ class IntelligentReasoning:
                 'get_vehicles_in_zone': f"Here are the vehicles in zone '{extracted_data.get('zone_name', 'N/A')}':",
                 'get_vehicles_in_region': f"Here are the vehicles in region '{extracted_data.get('region_name', 'N/A')}':",
                 'get_vehicles_in_plant': f"Here are the vehicles in plant '{extracted_data.get('plant_name', 'N/A')}':",
+                'get_vehicles_of_plant': f"Here are the vehicles assigned to '{extracted_data.get('plant_name', 'N/A')}' plant:",
                 'get_vehicle_hierarchy': f"Here's the complete hierarchy for vehicle {extracted_data.get('vehicle_reg', 'N/A')}:",
             }
             return hierarchical_responses.get(intent, "Here's the hierarchical information you requested:")
@@ -395,40 +454,61 @@ class IntelligentReasoning:
         return "I found the information you were looking for based on our conversation context."
 
     # HIERARCHICAL EXTRACTOR METHODS
-    def _extract_zone_from_vehicle(self, match, chat_context):
+    def _extract_show_all_regions(self, query: str, match, chat_context):
+        """Extract intent for showing all regions"""
+        return {'list_type': 'regions'}
+
+    def _extract_show_all_zones(self, query: str, match, chat_context):
+        """Extract intent for showing all zones"""
+        return {'list_type': 'zones'}
+
+    def _extract_show_all_plants(self, query: str, match, chat_context):
+        """Extract intent for showing all plants"""
+        return {'list_type': 'plants'}
+
+    def _extract_zone_from_vehicle(self, query: str, match, chat_context):
         """Extract vehicle registration for zone lookup"""
         vehicle_reg = match.group(1) if match.groups() else None
         return {'vehicle_reg': vehicle_reg} if vehicle_reg else None
 
-    def _extract_region_from_vehicle(self, match, chat_context):
+    def _extract_region_from_vehicle(self, query: str, match, chat_context):
         """Extract vehicle registration for region lookup"""
         vehicle_reg = match.group(1) if match.groups() else None
         return {'vehicle_reg': vehicle_reg} if vehicle_reg else None
 
-    def _extract_plant_from_vehicle(self, match, chat_context):
+    def _extract_plant_from_vehicle(self, query: str, match, chat_context):
         """Extract vehicle registration for plant lookup"""
         vehicle_reg = match.group(1) if match.groups() else None
         return {'vehicle_reg': vehicle_reg} if vehicle_reg else None
 
-    def _extract_vehicles_in_zone(self, match, chat_context):
+    def _extract_vehicles_in_zone(self, query: str, match, chat_context):
         """Extract zone name for vehicle lookup"""
         zone_name = match.group(1).strip() if match.groups() else None
         return {'zone_name': zone_name} if zone_name else None
 
-    def _extract_vehicles_in_region(self, match, chat_context):
+    def _extract_vehicles_in_region(self, query: str, match, chat_context):
         """Extract region name for vehicle lookup"""
         region_name = match.group(1).strip() if match.groups() else None
         return {'region_name': region_name} if region_name else None
 
-    def _extract_vehicles_in_plant(self, match, chat_context):
+    def _extract_vehicles_in_plant(self, query: str, match, chat_context):
         """Extract plant name for vehicle lookup"""
         plant_name = match.group(1).strip() if match.groups() else None
         return {'plant_name': plant_name} if plant_name else None
 
-    def _extract_vehicle_hierarchy(self, match, chat_context):
+    def _extract_vehicle_hierarchy(self, query: str, match, chat_context):
         """Extract vehicle registration for complete hierarchy lookup"""
         vehicle_reg = match.group(1) if match.groups() else None
         return {'vehicle_reg': vehicle_reg} if vehicle_reg else None
+
+    def _extract_vehicles_of_plant_flexible(self, query: str, match, chat_context):
+        """Extract plant name for vehicle lookup with flexible matching"""
+        plant_name = match.group(1).strip() if match.groups() else None
+        if plant_name:
+            # Clean up the plant name - remove common words like "the"
+            plant_name = re.sub(r'\b(?:the|plant|hospital)\b', '', plant_name, flags=re.IGNORECASE).strip()
+            return {'plant_name': plant_name} if plant_name else None
+        return None
 
     def generate_hierarchical_query(self, reasoning_result):
         """Generate SQL queries for hierarchical relationships"""
@@ -436,6 +516,27 @@ class IntelligentReasoning:
         extracted_data = reasoning_result['extracted_data']
         
         hierarchical_queries = {
+            'show_all_regions': lambda data: """
+                SELECT DISTINCT dm.name as region_name, dm.id_no as region_id
+                FROM district_master dm 
+                WHERE dm.name IS NOT NULL AND dm.name != ''
+                ORDER BY dm.name
+            """,
+            
+            'show_all_zones': lambda data: """
+                SELECT DISTINCT zm.zone_name, zm.id_no as zone_id
+                FROM zone_master zm 
+                WHERE zm.zone_name IS NOT NULL AND zm.zone_name != ''
+                ORDER BY zm.zone_name
+            """,
+            
+            'show_all_plants': lambda data: """
+                SELECT DISTINCT hm.name as plant_name, hm.id_no as plant_id
+                FROM hosp_master hm 
+                WHERE hm.name IS NOT NULL AND hm.name != ''
+                ORDER BY hm.name
+            """,
+            
             'get_zone_from_vehicle': lambda data: f"""
                 SELECT zm.zone_name, dm.name as district_name, hm.name as plant_name, vm.reg_no
                 FROM zone_master zm 
@@ -487,6 +588,15 @@ class IntelligentReasoning:
                 ORDER BY vm.reg_no
             """,
             
+            'get_vehicles_of_plant': lambda data: f"""
+                SELECT vm.reg_no, vm.bus_id, hm.name as plant_name
+                FROM vehicle_master vm 
+                JOIN hosp_master hm ON vm.id_hosp = hm.id_no 
+                WHERE hm.name ILIKE '%{data.get('plant_name', '')}%'
+                ORDER BY vm.reg_no
+                LIMIT 50
+            """,
+            
             'get_vehicle_hierarchy': lambda data: f"""
                 SELECT vm.reg_no, hm.name as plant_name, dm.name as district_name, zm.zone_name
                 FROM vehicle_master vm 
@@ -500,6 +610,289 @@ class IntelligentReasoning:
         query_generator = hierarchical_queries.get(intent)
         if query_generator:
             return query_generator(extracted_data).strip()
+        
+        return None
+
+    def generate_hierarchical_sql(self, entity_type, target_entity, filters=None):
+        """
+        Generate SQL with complete hierarchical joins using the core ID relationships.
+        
+        Args:
+            entity_type: The type of entity being queried ('vehicle', 'plant', 'region', 'zone')
+            target_entity: What we want to show/filter on
+            filters: Any additional filters
+        
+        Returns:
+            Complete SQL with proper joins using id_dist, id_hosp relationships
+        """
+        
+        # Define the complete join chain from bottom to top
+        complete_join_chain = """
+        FROM vehicle_master vm
+        LEFT JOIN hosp_master hm ON vm.id_hosp = hm.id_no
+        LEFT JOIN district_master dm ON hm.id_dist = dm.id_no  
+        LEFT JOIN zone_master zm ON dm.id_zone = zm.id_no
+        """
+        
+        sql_templates = {
+            'vehicles_by_plant': {
+                'select': 'vm.reg_no, vm.bus_id, hm.name as plant_name',
+                'joins': complete_join_chain,
+                'where_template': "hm.name ILIKE '%{plant_name}%'"
+            },
+            'vehicles_by_region': {
+                'select': 'vm.reg_no, vm.bus_id, dm.name as region_name, hm.name as plant_name',
+                'joins': complete_join_chain,
+                'where_template': "dm.name ILIKE '%{region_name}%'"
+            },
+            'vehicles_by_zone': {
+                'select': 'vm.reg_no, vm.bus_id, zm.zone_name, dm.name as region_name, hm.name as plant_name',
+                'joins': complete_join_chain,
+                'where_template': "zm.zone_name ILIKE '%{zone_name}%'"
+            },
+            'plants_by_region': {
+                'select': 'hm.name as plant_name, hm.id_no as plant_id, dm.name as region_name',
+                'joins': """
+                FROM hosp_master hm
+                LEFT JOIN district_master dm ON hm.id_dist = dm.id_no
+                """,
+                'where_template': "dm.name ILIKE '%{region_name}%'"
+            },
+            'plants_by_location_smart': {
+                'select': 'hm.name as plant_name, hm.id_no as plant_id, dm.name as region_name',
+                'joins': """
+                FROM hosp_master hm
+                LEFT JOIN district_master dm ON hm.id_dist = dm.id_no
+                """,
+                'where_template': "dm.name ILIKE '%{location_name}%'",
+                'note': 'Use this for most location queries (Gujarat, Maharashtra, etc.) - they are typically districts'
+            },
+            'plants_by_zone': {
+                'select': 'hm.name as plant_name, hm.id_no as plant_id, dm.name as region_name, zm.zone_name',
+                'joins': """
+                FROM hosp_master hm
+                LEFT JOIN district_master dm ON hm.id_dist = dm.id_no
+                LEFT JOIN zone_master zm ON dm.id_zone = zm.id_no
+                """,
+                'where_template': "zm.zone_name ILIKE '%{zone_name}%'",
+                'note': 'Use this ONLY when specifically asking for zone data or when location is confirmed to be a zone'
+            },
+            'full_hierarchy_for_vehicle': {
+                'select': 'vm.reg_no, vm.bus_id, hm.name as plant_name, dm.name as region_name, zm.zone_name',
+                'joins': complete_join_chain,
+                'where_template': "vm.reg_no = '{vehicle_reg}'"
+            }
+        }
+        
+        return sql_templates.get(f"{entity_type}_{target_entity}", None)
+    
+    def validate_hierarchical_query(self, query_text):
+        """
+        Validate that hierarchical queries use the correct ID relationships.
+        Returns suggestions for fixing common mistakes.
+        """
+        issues = []
+        suggestions = []
+        
+        # Check for common relationship mistakes
+        if 'vehicle' in query_text.lower() and 'plant' in query_text.lower():
+            if 'id_hosp' not in query_text:
+                issues.append("Missing id_hosp relationship between vehicle_master and hosp_master")
+                suggestions.append("Use: JOIN hosp_master hm ON vm.id_hosp = hm.id_no")
+        
+        if 'plant' in query_text.lower() and 'region' in query_text.lower():
+            if 'id_dist' not in query_text:
+                issues.append("Missing id_dist relationship between hosp_master and district_master")
+                suggestions.append("Use: JOIN district_master dm ON hm.id_dist = dm.id_no")
+        
+        if 'region' in query_text.lower() and 'zone' in query_text.lower():
+            if 'id_zone' not in query_text:
+                issues.append("Missing id_zone relationship between district_master and zone_master")
+                suggestions.append("Use: JOIN zone_master zm ON dm.id_zone = zm.id_no")
+        
+        return issues, suggestions
+    
+    def get_mandatory_joins_for_query(self, query_lower):
+        """
+        Return the mandatory JOIN statements needed for a hierarchical query.
+        This ensures no relationships are missed.
+        """
+        mandatory_joins = []
+        
+        # Analyze what entities are mentioned to determine required joins
+        entities_mentioned = {
+            'vehicle': any(word in query_lower for word in ['vehicle', 'truck', 'bus', 'fleet', 'reg_no']),
+            'plant': any(word in query_lower for word in ['plant', 'hospital', 'facility', 'hosp']),
+            'region': any(word in query_lower for word in ['region', 'district']),
+            'zone': any(word in query_lower for word in ['zone'])
+        }
+        
+        # Build the join chain based on what's needed
+        if entities_mentioned['vehicle']:
+            # Vehicle is mentioned, start from vehicle_master
+            base_table = 'vehicle_master vm'
+            
+            if entities_mentioned['plant']:
+                mandatory_joins.append('LEFT JOIN hosp_master hm ON vm.id_hosp = hm.id_no')
+                
+                if entities_mentioned['region']:
+                    mandatory_joins.append('LEFT JOIN district_master dm ON hm.id_dist = dm.id_no')
+                    
+                    if entities_mentioned['zone']:
+                        mandatory_joins.append('LEFT JOIN zone_master zm ON dm.id_zone = zm.id_no')
+                        
+        elif entities_mentioned['plant']:
+            # Plant is mentioned, start from hosp_master
+            base_table = 'hosp_master hm'
+            
+            if entities_mentioned['region']:
+                mandatory_joins.append('LEFT JOIN district_master dm ON hm.id_dist = dm.id_no')
+                
+                if entities_mentioned['zone']:
+                    mandatory_joins.append('LEFT JOIN zone_master zm ON dm.id_zone = zm.id_no')
+                    
+        elif entities_mentioned['region']:
+            # Region is mentioned, start from district_master
+            base_table = 'district_master dm'
+            
+            if entities_mentioned['zone']:
+                mandatory_joins.append('LEFT JOIN zone_master zm ON dm.id_zone = zm.id_no')
+                
+        else:
+            # Default to zone_master if only zone is mentioned
+            base_table = 'zone_master zm'
+        
+        return base_table, mandatory_joins
+
+    def analyze_hierarchical_completeness(self, query_text, sql_result=None):
+        """
+        Analyze if a query properly handles the hierarchical relationships.
+        Returns suggestions to ensure no data is missed due to incomplete joins.
+        """
+        query_lower = query_text.lower()
+        issues = []
+        recommendations = []
+        
+        # Check for vehicle-plant relationship completeness
+        if ('vehicle' in query_lower and 'plant' in query_lower) or \
+           ('vehicle' in query_lower and any(x in query_lower for x in ['mohali', 'chandigarh', 'ludhiana', 'amritsar'])):
+            
+            if sql_result and 'JOIN hosp_master' not in sql_result:
+                issues.append("Vehicle-Plant query missing proper JOIN")
+                recommendations.append("""
+                CRITICAL: For vehicle-plant queries, ALWAYS use:
+                FROM vehicle_master vm 
+                JOIN hosp_master hm ON vm.id_hosp = hm.id_no
+                WHERE hm.name ILIKE '%plant_name%'
+                """)
+                
+        # Check for region-based completeness  
+        if ('vehicle' in query_lower and any(x in query_lower for x in ['region', 'district', 'punjab', 'haryana'])):
+            
+            if sql_result and 'district_master' not in sql_result:
+                issues.append("Vehicle-Region query missing district hierarchy")
+                recommendations.append("""
+                CRITICAL: For vehicle-region queries, ALWAYS use complete hierarchy:
+                FROM vehicle_master vm
+                JOIN hosp_master hm ON vm.id_hosp = hm.id_no  
+                JOIN district_master dm ON hm.id_dist = dm.id_no
+                WHERE dm.name ILIKE '%region_name%'
+                """)
+                
+        # Check for zone-based completeness
+        if ('vehicle' in query_lower and 'zone' in query_lower):
+            
+            if sql_result and 'zone_master' not in sql_result:
+                issues.append("Vehicle-Zone query missing complete hierarchy")
+                recommendations.append("""
+                CRITICAL: For vehicle-zone queries, ALWAYS use full hierarchy:
+                FROM vehicle_master vm
+                JOIN hosp_master hm ON vm.id_hosp = hm.id_no
+                JOIN district_master dm ON hm.id_dist = dm.id_no  
+                JOIN zone_master zm ON dm.id_zone = zm.id_no
+                WHERE zm.zone_name ILIKE '%zone_name%'
+                """)
+        
+        return {
+            'has_issues': len(issues) > 0,
+            'issues': issues,
+            'recommendations': recommendations,
+            'completeness_score': max(0, 100 - (len(issues) * 25))  # Deduct 25% per major issue
+        }
+    
+    def get_hierarchical_sql_template(self, entity_from, entity_to, filter_value=None):
+        """
+        Get the correct SQL template for hierarchical queries.
+        Ensures all ID relationships are properly maintained.
+        """
+        
+        templates = {
+            ('vehicle', 'plant'): {
+                'sql': """
+                SELECT vm.reg_no, vm.bus_id, hm.name as plant_name, hm.id_no as plant_id
+                FROM vehicle_master vm
+                JOIN hosp_master hm ON vm.id_hosp = hm.id_no
+                {where_clause}
+                ORDER BY hm.name, vm.reg_no
+                """,
+                'where_template': "WHERE hm.name ILIKE '%{filter_value}%'" if filter_value else ""
+            },
+            
+            ('vehicle', 'region'): {
+                'sql': """
+                SELECT vm.reg_no, vm.bus_id, hm.name as plant_name, dm.name as region_name
+                FROM vehicle_master vm
+                JOIN hosp_master hm ON vm.id_hosp = hm.id_no
+                JOIN district_master dm ON hm.id_dist = dm.id_no
+                {where_clause}
+                ORDER BY dm.name, hm.name, vm.reg_no
+                """,
+                'where_template': "WHERE dm.name ILIKE '%{filter_value}%'" if filter_value else ""
+            },
+            
+            ('vehicle', 'zone'): {
+                'sql': """
+                SELECT vm.reg_no, vm.bus_id, hm.name as plant_name, dm.name as region_name, zm.zone_name
+                FROM vehicle_master vm
+                JOIN hosp_master hm ON vm.id_hosp = hm.id_no
+                JOIN district_master dm ON hm.id_dist = dm.id_no
+                JOIN zone_master zm ON dm.id_zone = zm.id_no
+                {where_clause}
+                ORDER BY zm.zone_name, dm.name, hm.name, vm.reg_no
+                """,
+                'where_template': "WHERE zm.zone_name ILIKE '%{filter_value}%'" if filter_value else ""
+            },
+            
+            ('plant', 'region'): {
+                'sql': """
+                SELECT hm.name as plant_name, hm.id_no as plant_id, dm.name as region_name
+                FROM hosp_master hm
+                JOIN district_master dm ON hm.id_dist = dm.id_no
+                {where_clause}
+                ORDER BY dm.name, hm.name
+                """,
+                'where_template': "WHERE dm.name ILIKE '%{filter_value}%'" if filter_value else ""
+            },
+            
+            ('plant', 'zone'): {
+                'sql': """
+                SELECT hm.name as plant_name, hm.id_no as plant_id, dm.name as region_name, zm.zone_name
+                FROM hosp_master hm
+                JOIN district_master dm ON hm.id_dist = dm.id_no
+                JOIN zone_master zm ON dm.id_zone = zm.id_no
+                {where_clause}
+                ORDER BY zm.zone_name, dm.name, hm.name
+                """,
+                'where_template': "WHERE zm.zone_name ILIKE '%{filter_value}%'" if filter_value else ""
+            }
+        }
+        
+        template = templates.get((entity_from, entity_to))
+        if template and filter_value:
+            where_clause = template['where_template'].format(filter_value=filter_value)
+            return template['sql'].format(where_clause=where_clause)
+        elif template:
+            return template['sql'].format(where_clause="")
         
         return None
 
