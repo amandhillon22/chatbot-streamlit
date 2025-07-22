@@ -69,7 +69,7 @@ except ImportError as e:
 load_dotenv()
 
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-model = genai.GenerativeModel("gemini-2.5-flash")
+model = genai.GenerativeModel("gemini-2.5-pro")
 
 def schema_dict_to_prompt(schema_dict):
     """

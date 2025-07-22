@@ -12,7 +12,7 @@ genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
 class EmbeddingManager:
     def __init__(self):
-        self.model = genai.GenerativeModel("gemini-2.5-flash")
+        self.model = genai.GenerativeModel("gemini-2.5-pro")
         self.schema_embeddings = {}
         self.table_descriptions = {}
         self.query_patterns = {}

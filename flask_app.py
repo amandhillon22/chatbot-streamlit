@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, session
 from query_agent import english_to_sql, generate_final_response, gemini_direct_answer, validate_sql_query
 from sql import run_query
 from decimal import Decimal
@@ -6,11 +6,13 @@ import os
 from dotenv import load_dotenv
 import time
 from functools import wraps
+from user_manager import user_manager, chat_history_manager
 
 # Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
+app.secret_key = os.getenv('SECRET_KEY', 'your-secret-key-change-this-in-production')
 
 # --- Serve the React or static frontend from frontend_new directory ---
 @app.route('/', defaults={'path': ''})
@@ -49,6 +51,99 @@ def rate_limit(requests_per_minute=10):
         return decorated_function
     return decorator
 
+# --- Authentication endpoints ---
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    username = data.get('username', '')
+    password = data.get('password', '')
+    
+    if not username or not password:
+        return jsonify({'authenticated': False, 'error': 'Username and password required'}), 400
+    
+    result = user_manager.authenticate_user(username, password)
+    
+    if result['authenticated']:
+        session['user_id'] = result['id']
+        session['username'] = result['username']
+        return jsonify({
+            'authenticated': True,
+            'user': {
+                'id': result['id'],
+                'username': result['username']
+            }
+        })
+    else:
+        return jsonify({'authenticated': False, 'error': 'Invalid credentials'}), 401
+
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    session.clear()
+    return jsonify({'logged_out': True})
+
+@app.route('/api/user', methods=['GET'])
+def get_current_user():
+    if 'user_id' in session:
+        return jsonify({
+            'authenticated': True,
+            'user': {
+                'id': session['user_id'],
+                'username': session['username']
+            }
+        })
+    else:
+        return jsonify({'authenticated': False})
+
+# --- Chat history endpoints ---
+@app.route('/api/chat/sessions', methods=['GET'])
+def get_chat_sessions():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    result = chat_history_manager.get_user_chat_sessions(session['user_id'])
+    return jsonify(result)
+
+@app.route('/api/chat/sessions', methods=['POST'])
+def create_chat_session():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    data = request.get_json()
+    title = data.get('title', None)
+    
+    result = chat_history_manager.create_chat_session(session['user_id'], title)
+    return jsonify(result)
+
+@app.route('/api/chat/sessions/<session_id>/history', methods=['GET'])
+def get_chat_history(session_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    result = chat_history_manager.get_chat_history(session_id)
+    return jsonify(result)
+
+@app.route('/api/chat/sessions/<session_id>', methods=['DELETE'])
+def delete_chat_session(session_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    result = chat_history_manager.delete_chat_session(session_id, session['user_id'])
+    return jsonify(result)
+
+@app.route('/api/chat/sessions/<session_id>/title', methods=['PUT'])
+def update_session_title(session_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    data = request.get_json()
+    title = data.get('title', '')
+    
+    if not title:
+        return jsonify({'error': 'Title required'}), 400
+    
+    result = chat_history_manager.update_session_title(session_id, title)
+    return jsonify(result)
+
 # --- Chat API endpoint (preserve your logic, but use context object for state) ---
 from query_agent import ChatContext
 user_contexts = {}
@@ -58,9 +153,13 @@ def get_user_context(session_id):
         user_contexts[session_id] = ChatContext()
     return user_contexts[session_id]
 
-@app.route('/chat', methods=['POST'])
+@app.route('/api/chat', methods=['POST'])
 @rate_limit(requests_per_minute=8)  # Conservative rate limiting
 def chat():
+    # Check authentication
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+        
     data = request.get_json()
     user_input = data.get('message', '')
     chat_history = data.get('history', [])
@@ -302,6 +401,20 @@ def chat():
     if hasattr(context, 'last_displayed_items') and context.last_displayed_items:
         print(f"📊 SAMPLE STORED ITEMS: {context.last_displayed_items[:3]}")
     print("-" * 80)
+    
+    # Save chat messages to database if user is authenticated
+    if 'user_id' in session and session_id != 'default':
+        try:
+            # Save user message
+            chat_history_manager.save_message(session_id, 'user', user_input)
+            
+            # Save assistant message with SQL query
+            sql_for_history = parsed.get('sql') if parsed.get('sql') and parsed.get('sql').strip().lower() != 'null' else None
+            chat_history_manager.save_message(session_id, 'assistant', final_answer, sql_for_history)
+            
+            print(f"💾 Saved messages to database for session: {session_id}")
+        except Exception as e:
+            print(f"⚠️ Error saving chat history: {e}")
     
     return jsonify({
         'response': final_answer,

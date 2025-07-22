@@ -693,6 +693,54 @@
 
 ### 🧭 Indexes
 - `busid_ts`: CREATE INDEX busid_ts ON public.bus_rt_status USING btree (bus_id, time_stamp)
+## 🗂️ Table: `chat_messages`
+
+**📊 Rows:** 40
+
+### Columns
+| Column Name | Data Type | Is Nullable |
+|-------------|-----------|-------------|
+| id | integer | NO |
+| session_id | integer | YES |
+| message_type | character varying | NO |
+| content | text | NO |
+| sql_query | text | YES |
+| created_at | timestamp without time zone | YES |
+
+### 🔐 Primary Keys
+- id
+
+### 🔗 Foreign Keys
+- `session_id` → `chat_sessions.id`
+
+### 🧭 Indexes
+- `chat_messages_pkey`: CREATE UNIQUE INDEX chat_messages_pkey ON public.chat_messages USING btree (id)
+- `idx_chat_messages_session_id`: CREATE INDEX idx_chat_messages_session_id ON public.chat_messages USING btree (session_id)
+## 🗂️ Table: `chat_sessions`
+
+**📊 Rows:** 3
+
+### Columns
+| Column Name | Data Type | Is Nullable |
+|-------------|-----------|-------------|
+| id | integer | NO |
+| user_id | integer | YES |
+| session_id | character varying | NO |
+| title | character varying | YES |
+| created_at | timestamp without time zone | YES |
+| updated_at | timestamp without time zone | YES |
+
+### 🔐 Primary Keys
+- id
+
+### 🔗 Foreign Keys
+- `user_id` → `users.id`
+
+### 🧭 Indexes
+- `chat_sessions_pkey`: CREATE UNIQUE INDEX chat_sessions_pkey ON public.chat_sessions USING btree (id)
+- `chat_sessions_session_id_key`: CREATE UNIQUE INDEX chat_sessions_session_id_key ON public.chat_sessions USING btree (session_id)
+- `idx_chat_sessions_user_id`: CREATE INDEX idx_chat_sessions_user_id ON public.chat_sessions USING btree (user_id)
+- `idx_chat_sessions_created_at`: CREATE INDEX idx_chat_sessions_created_at ON public.chat_sessions USING btree (created_at DESC)
 ## 🗂️ Table: `checkdpr`
 
 **📊 Rows:** 541125
@@ -4753,6 +4801,29 @@
 
 ### 🧭 Indexes
 - `qr_master_pkey`: CREATE UNIQUE INDEX qr_master_pkey ON public.qr_master USING btree (id_no)
+## 🗂️ Table: `query_patterns`
+
+**📊 Rows:** 22
+
+### Columns
+| Column Name | Data Type | Is Nullable |
+|-------------|-----------|-------------|
+| id | integer | NO |
+| user_query | text | NO |
+| sql_query | text | NO |
+| embedding_json | text | NO |
+| success | boolean | YES |
+| created_at | timestamp without time zone | YES |
+
+### 🔐 Primary Keys
+- id
+
+### 🔗 Foreign Keys
+- None
+
+### 🧭 Indexes
+- `query_patterns_pkey`: CREATE UNIQUE INDEX query_patterns_pkey ON public.query_patterns USING btree (id)
+- `query_patterns_created_idx`: CREATE INDEX query_patterns_created_idx ON public.query_patterns USING btree (created_at)
 ## 🗂️ Table: `rdc_cluster`
 
 **📊 Rows:** 13
@@ -5179,6 +5250,30 @@
 
 ### 🧭 Indexes
 - `schedule_master_pkey`: CREATE UNIQUE INDEX schedule_master_pkey ON public.schedule_master USING btree (id_no)
+## 🗂️ Table: `schema_embeddings`
+
+**📊 Rows:** 336
+
+### Columns
+| Column Name | Data Type | Is Nullable |
+|-------------|-----------|-------------|
+| id | integer | NO |
+| table_key | character varying | NO |
+| description | text | NO |
+| embedding_json | text | NO |
+| created_at | timestamp without time zone | YES |
+| updated_at | timestamp without time zone | YES |
+
+### 🔐 Primary Keys
+- id
+
+### 🔗 Foreign Keys
+- None
+
+### 🧭 Indexes
+- `schema_embeddings_pkey`: CREATE UNIQUE INDEX schema_embeddings_pkey ON public.schema_embeddings USING btree (id)
+- `schema_embeddings_table_key_key`: CREATE UNIQUE INDEX schema_embeddings_table_key_key ON public.schema_embeddings USING btree (table_key)
+- `schema_embeddings_table_key_idx`: CREATE INDEX schema_embeddings_table_key_idx ON public.schema_embeddings USING btree (table_key)
 ## 🗂️ Table: `seats_available`
 
 **📊 Rows:** 0
@@ -7677,6 +7772,28 @@
 
 ### 🧭 Indexes
 - `user_type_master_pkey`: CREATE UNIQUE INDEX user_type_master_pkey ON public.user_type_master USING btree (id_no)
+## 🗂️ Table: `users`
+
+**📊 Rows:** 1
+
+### Columns
+| Column Name | Data Type | Is Nullable |
+|-------------|-----------|-------------|
+| id | integer | NO |
+| username | character varying | NO |
+| password_hash | character varying | NO |
+| created_at | timestamp without time zone | YES |
+| last_login | timestamp without time zone | YES |
+
+### 🔐 Primary Keys
+- id
+
+### 🔗 Foreign Keys
+- None
+
+### 🧭 Indexes
+- `users_pkey`: CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)
+- `users_username_key`: CREATE UNIQUE INDEX users_username_key ON public.users USING btree (username)
 ## 🗂️ Table: `van_details`
 
 **📊 Rows:** 0

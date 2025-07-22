@@ -64,10 +64,6 @@ function showMainInterface() {
 }
 
 function setupEventListeners() {
-    // Initialize button states
-    centerSendBtn.disabled = true;
-    chatSendBtn.disabled = true;
-    
     // Login form
     loginForm.addEventListener('submit', handleLogin);
     
@@ -77,16 +73,14 @@ function setupEventListeners() {
     // Sidebar toggle
     sidebarToggle.addEventListener('click', toggleSidebar);
     
-    // New chat buttons  
-    if (newChatBtn) newChatBtn.addEventListener('click', startNewChat);
+    // New chat buttons
+    newChatBtn.addEventListener('click', startNewChat);
     newChatBtnSidebar.addEventListener('click', startNewChat);
     
     // Center input field (welcome screen)
     centerInputField.addEventListener('input', () => {
         autoResize(centerInputField);
-        const hasContent = centerInputField.value.trim();
-        console.log('Center input changed:', hasContent, 'Button disabled:', centerSendBtn.disabled);
-        centerSendBtn.disabled = !hasContent;
+        centerSendBtn.disabled = !centerInputField.value.trim();
     });
 
     centerInputField.addEventListener('keydown', (e) => {
@@ -156,27 +150,13 @@ async function handleLogin(e) {
 async function handleLogout() {
     try {
         await fetch('/api/logout', { method: 'POST' });
-        
-        // Clear all client-side data
         currentUser = null;
         currentSessionId = null;
         chatHistory = [];
-        
-        // Clear UI
-        clearChat();
-        chatSessions.innerHTML = '';
-        
-        // Show login interface
         showLoginInterface();
         showNotification('Logged out successfully', 'success');
     } catch (error) {
         console.error('Logout error:', error);
-        // Force logout on client side even if server request fails
-        currentUser = null;
-        currentSessionId = null;
-        chatHistory = [];
-        clearChat();
-        showLoginInterface();
     }
 }
 
@@ -186,18 +166,11 @@ async function loadChatSessions() {
         const response = await fetch('/api/chat/sessions');
         const data = await response.json();
         
-        console.log('Chat sessions response:', data);
-        
-        if (data.sessions) {
+        if (data.success) {
             renderChatSessions(data.sessions);
-        } else if (data.error) {
-            console.error('Session loading error:', data.error);
-            showNotification('Authentication error. Please login again.', 'error');
-            showLoginInterface();
         }
     } catch (error) {
         console.error('Failed to load chat sessions:', error);
-        showNotification('Failed to load chat history', 'error');
     }
 }
 
@@ -207,9 +180,9 @@ function renderChatSessions(sessions) {
     sessions.forEach(session => {
         const sessionElement = document.createElement('div');
         sessionElement.className = 'chat-session-item';
-        sessionElement.setAttribute('data-session-id', session.session_id);
+        sessionElement.setAttribute('data-session-id', session.id);
         
-        if (session.session_id === currentSessionId) {
+        if (session.id === currentSessionId) {
             sessionElement.classList.add('active');
         }
         
@@ -219,13 +192,13 @@ function renderChatSessions(sessions) {
                 <div class="session-time">${formatTime(session.created_at)}</div>
             </div>
             <div class="session-actions">
-                <button class="session-action" onclick="deleteSession('${session.session_id}')">
+                <button class="session-action" onclick="deleteSession('${session.id}')">
                     <i class="fas fa-trash"></i>
                 </button>
             </div>
         `;
         
-        sessionElement.addEventListener('click', () => loadChatSession(session.session_id));
+        sessionElement.addEventListener('click', () => loadChatSession(session.id));
         chatSessions.appendChild(sessionElement);
     });
 }
@@ -242,34 +215,24 @@ async function startNewChat() {
         
         const data = await response.json();
         
-        if (data.created) {
+        if (data.success) {
             currentSessionId = data.session_id;
             chatHistory = [];
             clearChat();
             showWelcomeScreen();
             await loadChatSessions();
-            showNotification('New chat created', 'success');
-        } else {
-            showNotification(data.error || 'Failed to create new chat', 'error');
         }
     } catch (error) {
         console.error('Failed to create new chat:', error);
-        showNotification('Network error while creating chat', 'error');
     }
 }
 
 async function loadChatSession(sessionId) {
     try {
-        // Add loading state
-        const sessionElement = document.querySelector(`[data-session-id="${sessionId}"]`);
-        if (sessionElement) {
-            sessionElement.classList.add('loading');
-        }
-        
         const response = await fetch(`/api/chat/sessions/${sessionId}/history`);
         const data = await response.json();
         
-        if (data.messages !== undefined) {
+        if (data.success) {
             currentSessionId = sessionId;
             chatHistory = data.messages;
             renderChatHistory();
@@ -277,28 +240,12 @@ async function loadChatSession(sessionId) {
             
             // Update active session in sidebar
             document.querySelectorAll('.chat-session-item').forEach(item => {
-                item.classList.remove('active', 'loading');
+                item.classList.remove('active');
             });
-            
-            const targetElement = document.querySelector(`[data-session-id="${sessionId}"]`);
-            if (targetElement) {
-                targetElement.classList.add('active');
-            }
-        } else if (data.error) {
-            showNotification(data.error, 'error');
-            if (sessionElement) {
-                sessionElement.classList.remove('loading');
-            }
+            document.querySelector(`[data-session-id="${sessionId}"]`).classList.add('active');
         }
     } catch (error) {
         console.error('Failed to load chat session:', error);
-        showNotification('Failed to load chat session', 'error');
-        
-        // Remove loading state
-        const sessionElement = document.querySelector(`[data-session-id="${sessionId}"]`);
-        if (sessionElement) {
-            sessionElement.classList.remove('loading');
-        }
     }
 }
 
@@ -311,7 +258,7 @@ async function deleteSession(sessionId) {
             
             const data = await response.json();
             
-            if (data.deleted) {
+            if (data.success) {
                 await loadChatSessions();
                 
                 if (sessionId === currentSessionId) {
@@ -321,12 +268,9 @@ async function deleteSession(sessionId) {
                 }
                 
                 showNotification('Chat deleted', 'success');
-            } else {
-                showNotification(data.error || 'Failed to delete chat', 'error');
             }
         } catch (error) {
             console.error('Failed to delete session:', error);
-            showNotification('Network error while deleting chat', 'error');
         }
     }
 }
@@ -438,31 +382,19 @@ async function sendMessageToAPI(message) {
         hideTypingIndicator();
         
         if (response.ok) {
-            let botResponse = data.response;
-            
-            // Add message to chat
-            addMessageToChat(botResponse, 'assistant', true);
+            addMessageToChat(data.response, 'assistant');
             
             // Update chat sessions to reflect new activity
             await loadChatSessions();
-        } else if (response.status === 401) {
-            addMessageToChat('Authentication expired. Please login again.', 'assistant');
-            showNotification('Please login again', 'error');
-            setTimeout(() => {
-                showLoginInterface();
-            }, 2000);
         } else {
-            addMessageToChat(data.error || 'Sorry, I encountered an error. Please try again.', 'assistant');
+            addMessageToChat('Sorry, I encountered an error. Please try again.', 'assistant');
         }
     } catch (error) {
         console.error('API Error:', error);
         hideTypingIndicator();
         addMessageToChat('Network error. Please check your connection and try again.', 'assistant');
-        showNotification('Network error occurred', 'error');
     } finally {
         isTyping = false;
-        // Re-enable send buttons (they will be managed by input event listeners)
-        // Don't force disable here as input fields might be empty after sending
     }
 }
 
@@ -472,7 +404,7 @@ function addMessageToChat(content, type, scroll = true) {
     
     const avatar = document.createElement('div');
     avatar.className = 'message-avatar';
-    avatar.innerHTML = type === 'user' ? 'U' : '<i class="fa-solid fa-robot"></i>';
+    avatar.innerHTML = type === 'user' ? 'U' : '<i class="fas fa-brain"></i>';
     
     const messageContent = document.createElement('div');
     messageContent.className = 'message-content';
@@ -493,8 +425,13 @@ function addMessageToChat(content, type, scroll = true) {
         messageContent.textContent = content;
     }
     
+    const timestamp = document.createElement('div');
+    timestamp.className = 'message-timestamp';
+    timestamp.textContent = formatTime(new Date());
+    
     messageDiv.appendChild(avatar);
     messageDiv.appendChild(messageContent);
+    messageContent.appendChild(timestamp);
     
     chatMessages.appendChild(messageDiv);
     
@@ -510,7 +447,7 @@ function showTypingIndicator() {
     
     typingDiv.innerHTML = `
         <div class="message-avatar">
-            <i class="fa-solid fa-robot"></i>
+            <i class="fas fa-brain"></i>
         </div>
         <div class="message-content">
             <div class="loading-dots">
@@ -567,20 +504,14 @@ function showNotification(message, type = 'info') {
 
 // Auto-login for default user (development convenience)
 document.addEventListener('DOMContentLoaded', () => {
-    // Auto-fill and attempt login for the default user after page loads completely
+    // Auto-fill and attempt login for the default user
     setTimeout(async () => {
         if (loginContainer && !loginContainer.classList.contains('hidden')) {
-            const usernameField = document.getElementById('username');
-            const passwordField = document.getElementById('password');
+            document.getElementById('username').value = 'admin01';
+            document.getElementById('password').value = '123456';
             
-            if (usernameField && passwordField) {
-                usernameField.value = 'admin01';
-                passwordField.value = '123456';
-                
-                // Auto-submit login form
-                const submitEvent = new Event('submit', { cancelable: true });
-                loginForm.dispatchEvent(submitEvent);
-            }
+            // Auto-submit login form
+            loginForm.dispatchEvent(new Event('submit'));
         }
-    }, 1000); // Increased delay to ensure DOM is fully ready
+    }, 500);
 });
