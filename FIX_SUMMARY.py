@@ -4,7 +4,7 @@ COMPREHENSIVE FIX SUMMARY: Plant/Vehicle/Region Query Issues
 ============================================================
 
 ISSUE RESOLVED:
-- System was misinterpreting hosp_master as "hospital" data when it actually contains PLANT data
+- System was misinterpreting hosp_master as "medical" data when it actually contains PLANT data
 - Queries like "vehicles in Mohali" were failing because the system didn't understand table relationships
 - Column name errors (zm.name vs zm.zone_name) were causing SQL failures
 - Inefficient queries using unnecessary zone_master joins for district-level data
@@ -13,7 +13,7 @@ FIXES IMPLEMENTED:
 ====================
 
 1. 🏭 CRITICAL TABLE CLARIFICATION:
-   - Added explicit guidance that hosp_master = PLANT DATA (not hospitals)
+   - Added explicit guidance that hosp_master = PLANT DATA (not medical facilities)
    - Updated all prompts to clarify table meanings
    - Added warnings against misinterpreting table names
 
@@ -61,7 +61,7 @@ BEFORE vs AFTER COMPARISON:
 
 KEY IMPROVEMENTS:
 =================
-1. 🎯 Smart table interpretation (hosp_master = plants, not hospitals)
+1. 🎯 Smart table interpretation (hosp_master = plants, not medical facilities)
 2. 🔧 Efficient query generation (avoid unnecessary joins)
 3. 🔑 Correct column name usage (zone_name, not name)
 4. 🧠 Better location detection (district vs zone)

@@ -1430,6 +1430,8 @@
 
 **📊 Rows:** 1259457
 
+**👥 Business Context:** Customer detail table - bottom level in the organizational hierarchy. Contains detailed customer visit records, linking to both sites and plants. This is the transactional level where actual business activities are recorded.
+
 ### Columns
 | Column Name | Data Type | Is Nullable |
 |-------------|-----------|-------------|
@@ -1473,8 +1475,10 @@
 ### 🔐 Primary Keys
 - id_no
 
-### 🔗 Foreign Keys
-- None
+### 🔗 Foreign Keys (Hierarchical Parents)
+- site_id → site_master.id_no (Parent site location)
+- plant_id → hosp_master.id_no (Parent plant)
+- cust_id → [Customer master reference]
 
 ### 🧭 Indexes
 - `customer_detail_pkey`: CREATE UNIQUE INDEX customer_detail_pkey ON public.customer_detail USING btree (id_no)
@@ -1823,6 +1827,8 @@
 
 **📊 Rows:** 34
 
+**🏢 Business Context:** District/Region master table - second level in the organizational hierarchy (Zone → District → Plant → Vehicle). Contains district/region information and links to parent zones. Each district contains multiple plants.
+
 ### Columns
 | Column Name | Data Type | Is Nullable |
 |-------------|-----------|-------------|
@@ -1842,8 +1848,11 @@
 ### 🔐 Primary Keys
 - id_no
 
-### 🔗 Foreign Keys
-- None
+### 🔗 Foreign Keys (Hierarchical Parents)
+- id_zone → zone_master.id_no (Parent zone)
+
+### 🔗 Referenced By (Hierarchical Children)
+- hosp_master.id_dist → district_master.id_no (Plants under this district)
 
 ### 🧭 Indexes
 - `district_master_pkey`: CREATE UNIQUE INDEX district_master_pkey ON public.district_master USING btree (id_no)
@@ -3136,6 +3145,8 @@
 
 **📊 Rows:** 205
 
+**🏭 Business Context:** Plant master table - third level in the organizational hierarchy (Zone → District → Plant → Vehicle). Contains plant/facility details, contact information, and location data. **Note: 'hosp' refers to plants/facilities, not medical facilities.** Links to parent districts and serves as the operational base for vehicles.
+
 ### Columns
 | Column Name | Data Type | Is Nullable |
 |-------------|-----------|-------------|
@@ -3183,8 +3194,14 @@
 ### 🔐 Primary Keys
 - id_no
 
-### 🔗 Foreign Keys
-- None
+### 🔗 Foreign Keys (Hierarchical Parents)
+- id_dist → district_master.id_no (Parent district/region)
+
+### 🔗 Referenced By (Hierarchical Children)
+- vehicle_master.id_hosp → hosp_master.id_no (Vehicles assigned to this plant)
+- site_master.plant_id → hosp_master.id_no (Sites under this plant)
+- customer_detail.plant_id → hosp_master.id_no (Customer visits to this plant)
+- plant_data.plant_id → hosp_master.id_no (Plant operational data)
 
 ### 🧭 Indexes
 - `hosp_master_pkey`: CREATE UNIQUE INDEX hosp_master_pkey ON public.hosp_master USING btree (id_no)
@@ -4420,6 +4437,8 @@
 
 **📊 Rows:** 41
 
+**📊 Business Context:** Plant operational data table. Contains daily operational readings and metrics for plants. Links to hosp_master for plant identification and hierarchy.
+
 ### Columns
 | Column Name | Data Type | Is Nullable |
 |-------------|-----------|-------------|
@@ -4438,7 +4457,7 @@
 - id_no
 
 ### 🔗 Foreign Keys
-- None
+- plant_id → hosp_master.id_no (Parent plant)
 
 ### 🧭 Indexes
 - `plant_data_pkey`: CREATE UNIQUE INDEX plant_data_pkey ON public.plant_data USING btree (id_no)
@@ -5609,6 +5628,8 @@
 
 **📊 Rows:** 218926
 
+**📍 Business Context:** Site master table - middle level in the organizational hierarchy. Contains customer sites/locations under specific plants. Links customers to plants and serves as the location reference for business operations.
+
 ### Columns
 | Column Name | Data Type | Is Nullable |
 |-------------|-----------|-------------|
@@ -5629,8 +5650,12 @@
 ### 🔐 Primary Keys
 - id_no
 
-### 🔗 Foreign Keys
-- None
+### 🔗 Foreign Keys (Hierarchical Parents)
+- plant_id → hosp_master.id_no (Parent plant)
+- customer_id → [Customer master reference]
+
+### 🔗 Referenced By (Hierarchical Children)  
+- customer_detail.site_id → site_master.id_no (Customer visits to this site)
 
 ### 🧭 Indexes
 - `site_master_pkey`: CREATE UNIQUE INDEX site_master_pkey ON public.site_master USING btree (id_no)
@@ -7900,6 +7925,8 @@
 
 **📊 Rows:** 11
 
+**🚗 Business Context:** Vehicle type lookup table defining different categories of vehicles (trucks, taxis, bulkers, etc.). Referenced by `vehicle_master.dept_no` for vehicle categorization.
+
 ### Columns
 | Column Name | Data Type | Is Nullable |
 |-------------|-----------|-------------|
@@ -8064,6 +8091,8 @@
 
 **📊 Rows:** 2234
 
+**🚗 Business Context:** Vehicle master table - bottom level in the organizational hierarchy (Zone → District → Plant → Vehicle). Contains fleet management, device details, and vehicle categorization. Links to parent plants via `id_hosp`. The `dept_no` column links to `veh_type.id_no` to categorize vehicles by type (truck, taxi, bulker, etc.).
+
 ### Columns
 | Column Name | Data Type | Is Nullable |
 |-------------|-----------|-------------|
@@ -8144,7 +8173,8 @@
 - id_no
 
 ### 🔗 Foreign Keys
-- None
+- dept_no → veh_type.id_no (Vehicle Type Category)
+- id_hosp → hosp_master.id_no (Parent plant/facility in hierarchy)
 
 ### 🧭 Indexes
 - `vehicle_master_bus_id_key`: CREATE UNIQUE INDEX vehicle_master_bus_id_key ON public.vehicle_master USING btree (bus_id)
@@ -8770,6 +8800,8 @@
 
 **📊 Rows:** 1
 
+**🌍 Business Context:** Zone master table - highest level in the organizational hierarchy. Defines geographical zones for business operations. Each zone contains multiple districts/regions.
+
 ### Columns
 | Column Name | Data Type | Is Nullable |
 |-------------|-----------|-------------|
@@ -8780,10 +8812,13 @@
 | remarks | text | YES |
 
 ### 🔐 Primary Keys
-- None
+- id_no
 
 ### 🔗 Foreign Keys
-- None
+- None (Top level in hierarchy)
+
+### 🔗 Referenced By (Hierarchical Children)
+- district_master.id_zone → zone_master.id_no (Districts/Regions under this zone)
 
 ### 🧭 Indexes
 - None

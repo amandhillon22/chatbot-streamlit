@@ -30,7 +30,7 @@ def demo_hierarchical_queries():
         },
         {
             'query': "What plant does vehicle TN09EF9012 belong to?",
-            'explanation': "Find plant/hospital for specific vehicle (2-level hierarchy)"
+            'explanation': "Find plant for specific vehicle (2-level hierarchy)"
         },
         {
             'query': "Show me all vehicles in North zone",

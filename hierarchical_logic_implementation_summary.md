@@ -23,7 +23,7 @@ vehicle_master (vehicle level)
 ### 1. `/query_agent.py`
 **Changes:**
 - Replaced region guidance with comprehensive **hierarchical guidance**
-- Added zone, region/district, plant/hospital, and vehicle hierarchy examples
+- Added zone, region/district, plant, and vehicle hierarchy examples
 - Updated prompts to use proper join relationships
 - Enhanced guidance for complete hierarchy queries
 
@@ -46,7 +46,7 @@ vehicle_master (vehicle level)
 'region': ['district_master', 'vehicle_master', 'vehicle_location_shifting'],
 'district': ['district_master'], 
 'plant': ['hosp_master', 'plant_schedule', 'plant_master'],
-'hospital': ['hosp_master'],
+'plant': ['hosp_master'],
 'facility': ['hosp_master'],
 ```
 
@@ -120,7 +120,7 @@ WHERE vm.reg_no = 'VEHICLE_REG'
 - "Show all vehicles in Mumbai region"
 - "What districts are in zone North?"
 
-### Plant/Hospital Queries
+### Plant Queries
 - "What plant does vehicle TN09EF9012 belong to?"
 - "Show all vehicles in Bangalore plant"
 - "List plants in Mumbai region"

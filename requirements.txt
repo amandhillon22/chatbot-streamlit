@@ -8,3 +8,4 @@ gunicorn
 sentence-transformers
 pgvector
 scikit-learn
+numpy

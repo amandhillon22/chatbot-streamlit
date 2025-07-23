@@ -29,8 +29,8 @@ class EnhancedTableMapper:
             
             'plant': ['hosp_master'],          # ONLY hosp_master
             'plants': ['hosp_master'],         # ONLY hosp_master
-            'hospital': ['hosp_master'],       # ONLY hosp_master
-            'hospitals': ['hosp_master'],      # ONLY hosp_master
+            'plant': ['hosp_master'],          # ONLY hosp_master
+            'plants': ['hosp_master'],         # ONLY hosp_master
             'facility': ['hosp_master'],       # ONLY hosp_master
             'facilities': ['hosp_master'],     # ONLY hosp_master
             
@@ -103,7 +103,7 @@ class EnhancedTableMapper:
             'zones': 'zone_master',
             'districts': 'district_master',
             'regions': 'district_master',        # FORCE district_master
-            'hospitals': 'hosp_master',
+            'plants': 'hosp_master',
             'plants': 'hosp_master',            # FORCE hosp_master
             'facilities': 'hosp_master',
             'vehicles': 'vehicle_master',       # FORCE vehicle_master
@@ -117,13 +117,13 @@ class EnhancedTableMapper:
                 ['zone_master', 'district_master', 'hosp_master', 'vehicle_master'],
             r'\b(?:what|which|show)\s+(?:region|district)\s+(?:does|for|of)\s+(?:vehicle|truck)\s+([A-Z0-9-]+)': 
                 ['district_master', 'hosp_master', 'vehicle_master'],
-            r'\b(?:what|which|show)\s+(?:plant|hospital|facility)\s+(?:does|for|of)\s+(?:vehicle|truck)\s+([A-Z0-9-]+)': 
+            r'\b(?:what|which|show)\s+(?:plant|facility)\s+(?:does|for|of)\s+(?:vehicle|truck)\s+([A-Z0-9-]+)': 
                 ['hosp_master', 'vehicle_master'],
             r'\b(?:vehicles|trucks)\s+(?:in|for|at)\s+(?:zone|area)\s+([A-Z0-9\s]+)': 
                 ['zone_master', 'district_master', 'hosp_master', 'vehicle_master'],
             r'\b(?:vehicles|trucks)\s+(?:in|for|at)\s+(?:region|district)\s+([A-Z0-9\s]+)': 
                 ['district_master', 'hosp_master', 'vehicle_master'],
-            r'\b(?:vehicles|trucks)\s+(?:in|for|at)\s+(?:plant|hospital)\s+([A-Z0-9\s]+)': 
+            r'\b(?:vehicles|trucks)\s+(?:in|for|at)\s+(?:plant)\s+([A-Z0-9\s]+)': 
                 ['hosp_master', 'vehicle_master'],
             r'\b(?:zone|region|plant|vehicle)\s+(?:hierarchy|relationship|structure)': 
                 ['zone_master', 'district_master', 'hosp_master', 'vehicle_master'],

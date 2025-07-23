@@ -12,7 +12,7 @@ def test_pattern_matching():
     print("=" * 50)
     
     # Test the new flexible pattern
-    pattern = r'(?:vehicles|trucks).*(?:of|in|at)\s+([a-zA-Z0-9\s\-]+?)(?:\s+plant|\s+hospital|$)'
+    pattern = r'(?:vehicles|trucks).*(?:of|in|at)\s+([a-zA-Z0-9\s\-]+?)(?:\s+plant|$)'
     
     test_queries = [
         "show me the vehicles of mohali plant",
@@ -32,7 +32,7 @@ def test_pattern_matching():
         if match:
             plant_name = match.group(1).strip()
             # Clean up like the extractor does
-            cleaned = re.sub(r'\b(?:the|plant|hospital)\b', '', plant_name, flags=re.IGNORECASE).strip()
+            cleaned = re.sub(r'\b(?:the|plant)\b', '', plant_name, flags=re.IGNORECASE).strip()
             print(f"✅ '{query}' → Extracted: '{plant_name}' → Cleaned: '{cleaned}'")
         else:
             print(f"❌ '{query}' → No match")

@@ -13,7 +13,7 @@ class IntelligentReasoning:
     to understand implicit requests and auto-resolve data relationships
     
     CRITICAL TABLE CLARIFICATIONS:
-    - hosp_master = PLANT DATA (factories, facilities, sites) - NOT hospitals!
+    - hosp_master = PLANT DATA (factories, facilities, sites) - NOT medical facilities!
     - district_master = REGIONS/DISTRICTS/STATES 
     - zone_master = ZONES (larger geographic areas)
     - vehicle_master = VEHICLES/TRUCKS/FLEET
@@ -24,7 +24,24 @@ class IntelligentReasoning:
         # These ID relationships are MANDATORY and must NEVER be missed:
         # zone_master.id_no ← district_master.id_zone ← hosp_master.id_dist ← vehicle_master.id_hosp
         
-        # IMPORTANT: hosp_master contains PLANT DATA, not hospital data!
+        # IMPORTANT: hosp_master contains PLANT DATA, not medical data!
+        
+        # Import database reference parser for business rules
+        try:
+            from database_reference_parser import DatabaseReferenceParser
+            self.db_parser = DatabaseReferenceParser()
+        except ImportError:
+            self.db_parser = None
+            print("⚠️ DatabaseReferenceParser not available - business rules disabled")
+        
+        # Import EONINFOTECH masker for consistent data masking
+        try:
+            from eoninfotech_masker import EoninfotechDataMasker
+            self.data_masker = EoninfotechDataMasker()
+        except ImportError:
+            self.data_masker = None
+            print("⚠️ EONINFOTECH masker not available - data will not be masked")
+        
         self.core_hierarchy = {
             'zone_master': {
                 'primary_key': 'id_no',
@@ -32,7 +49,7 @@ class IntelligentReasoning:
                 'child_foreign_key': 'id_zone'
             },
             'district_master': {
-                'primary_key': 'id_no', 
+                'primary_key': 'id_no',
                 'parent_table': 'zone_master',
                 'parent_foreign_key': 'id_zone',
                 'child_table': 'hosp_master',
@@ -40,7 +57,7 @@ class IntelligentReasoning:
             },
             'hosp_master': {
                 'primary_key': 'id_no',
-                'parent_table': 'district_master', 
+                'parent_table': 'district_master',
                 'parent_foreign_key': 'id_dist',
                 'child_table': 'vehicle_master',
                 'child_foreign_key': 'id_hosp'
@@ -49,6 +66,49 @@ class IntelligentReasoning:
                 'primary_key': 'id_no',
                 'parent_table': 'hosp_master',
                 'parent_foreign_key': 'id_hosp'
+            },
+            
+            # CRM Complaint System Hierarchy
+            'customer_ship_details': {
+                'primary_key': ['customer_id', 'ship_to_id'],
+                'child_table': 'crm_complaint_dtls',
+                'child_foreign_keys': ['cust_id', 'site_id']
+            },
+            'ship_to_address': {
+                'primary_key': 'ship_to_id',
+                'child_table': 'customer_ship_details',
+                'child_foreign_key': 'ship_to_id'
+            },
+            'crm_complaint_category': {
+                'primary_key': 'id_no',
+                'child_table': 'crm_complaint_category_type',
+                'child_foreign_key': 'category_id'
+            },
+            'crm_complaint_category_type': {
+                'primary_key': 'id_no',
+                'parent_table': 'crm_complaint_category',
+                'parent_foreign_key': 'category_id',
+                'child_table': 'crm_complaint_dtls',
+                'child_foreign_key': 'complaint_type_id'
+            },
+            'crm_complaint_dtls': {
+                'primary_key': 'id_no',
+                'parent_tables': [
+                    {'table': 'customer_ship_details', 'foreign_keys': ['cust_id', 'site_id']},
+                    {'table': 'crm_complaint_category', 'foreign_key': 'complaint_category_id'},
+                    {'table': 'crm_complaint_category_type', 'foreign_key': 'complaint_type_id'},
+                    {'table': 'hosp_master', 'foreign_key': 'plant_id'}
+                ],
+                'child_table': 'crm_site_visit_dtls',
+                'child_foreign_key': 'complaint_id'
+            },
+            'crm_site_visit_dtls': {
+                'primary_key': 'id_no',
+                'parent_tables': [
+                    {'table': 'crm_complaint_dtls', 'foreign_key': 'complaint_id'},
+                    {'table': 'customer_ship_details', 'foreign_keys': ['cust_id', 'site_id']},
+                    {'table': 'hosp_master', 'foreign_key': 'plant_id'}
+                ]
             }
         }
         
@@ -145,7 +205,7 @@ class IntelligentReasoning:
                 'extractor': self._extract_show_all_zones
             },
             {
-                'pattern': r'(?:show|list|all)\s+(?:all\s+)?(?:plants|hospitals|facilities)',
+                'pattern': r'(?:show|list|all)\s+(?:all\s+)?(?:plants|facilities)',
                 'intent': 'show_all_plants',
                 'extractor': self._extract_show_all_plants
             },
@@ -162,7 +222,7 @@ class IntelligentReasoning:
                 'extractor': self._extract_region_from_vehicle
             },
             {
-                'pattern': r'(?:plant|hospital|facility).*(?:vehicle|truck)\s+([A-Z0-9-]+)',
+                'pattern': r'(?:plant|facility).*(?:vehicle|truck)\s+([A-Z0-9-]+)',
                 'intent': 'get_plant_from_vehicle',
                 'extractor': self._extract_plant_from_vehicle
             },
@@ -177,12 +237,12 @@ class IntelligentReasoning:
                 'extractor': self._extract_vehicles_in_region
             },
             {
-                'pattern': r'(?:vehicles|trucks).*(?:plant|hospital)\s+([A-Z0-9\s]+)',
+                'pattern': r'(?:vehicles|trucks).*(?:plant)\s+([A-Z0-9\s]+)',
                 'intent': 'get_vehicles_in_plant',
                 'extractor': self._extract_vehicles_in_plant
             },
             {
-                'pattern': r'(?:vehicles|trucks).*(?:of|in|at)\s+([a-zA-Z0-9\s\-]+?)(?:\s+plant|\s+hospital|$)',
+                'pattern': r'(?:vehicles|trucks).*(?:of|in|at)\s+([a-zA-Z0-9\s\-]+?)(?:\s+plant|$)',
                 'intent': 'get_vehicles_of_plant',
                 'extractor': self._extract_vehicles_of_plant_flexible
             },
@@ -506,7 +566,7 @@ class IntelligentReasoning:
         plant_name = match.group(1).strip() if match.groups() else None
         if plant_name:
             # Clean up the plant name - remove common words like "the"
-            plant_name = re.sub(r'\b(?:the|plant|hospital)\b', '', plant_name, flags=re.IGNORECASE).strip()
+            plant_name = re.sub(r'\b(?:the|plant)\b', '', plant_name, flags=re.IGNORECASE).strip()
             return {'plant_name': plant_name} if plant_name else None
         return None
 
@@ -538,7 +598,16 @@ class IntelligentReasoning:
             """,
             
             'get_zone_from_vehicle': lambda data: f"""
-                SELECT zm.zone_name, dm.name as district_name, hm.name as plant_name, vm.reg_no
+                SELECT 
+                    CASE WHEN zm.zone_name = 'EONINFOTECH' THEN 'Inactive Region' ELSE zm.zone_name END as zone_name,
+                    CASE WHEN dm.name = 'EONINFOTECH' THEN 'Inactive Region' ELSE dm.name END as district_name,
+                    CASE WHEN hm.name ILIKE '%EON OFFICE%' THEN 'Removed Facility' ELSE hm.name END as plant_name, 
+                    vm.reg_no,
+                    CASE 
+                        WHEN hm.name ILIKE '%EON OFFICE%' THEN 'Device Removed'
+                        WHEN dm.name = 'EONINFOTECH' THEN 'Inactive' 
+                        ELSE COALESCE(vm.status, 'Active') 
+                    END as status
                 FROM zone_master zm 
                 JOIN district_master dm ON zm.id_no = dm.id_zone 
                 JOIN hosp_master hm ON dm.id_no = hm.id_dist 
@@ -547,7 +616,15 @@ class IntelligentReasoning:
             """,
             
             'get_region_from_vehicle': lambda data: f"""
-                SELECT dm.name as region_name, hm.name as plant_name, vm.reg_no
+                SELECT 
+                    CASE WHEN dm.name = 'EONINFOTECH' THEN 'Inactive Region' ELSE dm.name END as region_name,
+                    CASE WHEN hm.name ILIKE '%EON OFFICE%' THEN 'Removed Facility' ELSE hm.name END as plant_name, 
+                    vm.reg_no,
+                    CASE 
+                        WHEN hm.name ILIKE '%EON OFFICE%' THEN 'Device Removed'
+                        WHEN dm.name = 'EONINFOTECH' THEN 'Inactive' 
+                        ELSE COALESCE(vm.status, 'Active') 
+                    END as status
                 FROM district_master dm 
                 JOIN hosp_master hm ON dm.id_no = hm.id_dist 
                 JOIN vehicle_master vm ON hm.id_no = vm.id_hosp 
@@ -562,43 +639,78 @@ class IntelligentReasoning:
             """,
             
             'get_vehicles_in_zone': lambda data: f"""
-                SELECT vm.reg_no, hm.name as plant_name, dm.name as district_name
+                SELECT 
+                    vm.reg_no, 
+                    CASE WHEN hm.name ILIKE '%EON OFFICE%' THEN 'Removed Facility' ELSE hm.name END as plant_name, 
+                    CASE WHEN dm.name = 'EONINFOTECH' THEN 'Inactive Region' ELSE dm.name END as district_name,
+                    CASE 
+                        WHEN hm.name ILIKE '%EON OFFICE%' THEN 'Device Removed'
+                        WHEN dm.name = 'EONINFOTECH' THEN 'Inactive' 
+                        ELSE COALESCE(vm.status, 'Active') 
+                    END as status
                 FROM vehicle_master vm 
                 JOIN hosp_master hm ON vm.id_hosp = hm.id_no 
                 JOIN district_master dm ON hm.id_dist = dm.id_no 
                 JOIN zone_master zm ON dm.id_zone = zm.id_no 
                 WHERE zm.zone_name ILIKE '%{data.get('zone_name', '')}%'
+                   OR ('{data.get('zone_name', '').lower()}' IN ('eoninfotech', 'eon infotech') AND dm.name = 'EONINFOTECH')
                 ORDER BY vm.reg_no
             """,
             
             'get_vehicles_in_region': lambda data: f"""
-                SELECT vm.reg_no, hm.name as plant_name
+                SELECT 
+                    vm.reg_no, 
+                    CASE WHEN hm.name ILIKE '%EON OFFICE%' THEN 'Removed Facility' ELSE hm.name END as plant_name,
+                    CASE 
+                        WHEN hm.name ILIKE '%EON OFFICE%' THEN 'Device Removed'
+                        WHEN dm.name = 'EONINFOTECH' THEN 'Inactive' 
+                        ELSE COALESCE(vm.status, 'Active') 
+                    END as status
                 FROM vehicle_master vm 
                 JOIN hosp_master hm ON vm.id_hosp = hm.id_no 
                 JOIN district_master dm ON hm.id_dist = dm.id_no 
                 WHERE dm.name ILIKE '%{data.get('region_name', '')}%'
+                   OR ('{data.get('region_name', '').lower()}' IN ('eoninfotech', 'eon infotech') AND dm.name = 'EONINFOTECH')
                 ORDER BY vm.reg_no
             """,
             
             'get_vehicles_in_plant': lambda data: f"""
-                SELECT vm.reg_no, vm.regional_name
+                SELECT 
+                    vm.reg_no, 
+                    vm.regional_name,
+                    CASE WHEN dm.name = 'EONINFOTECH' THEN 'Inactive' ELSE COALESCE(vm.status, 'Active') END as status
                 FROM vehicle_master vm 
                 JOIN hosp_master hm ON vm.id_hosp = hm.id_no 
+                LEFT JOIN district_master dm ON hm.id_dist = dm.id_no
                 WHERE hm.name ILIKE '%{data.get('plant_name', '')}%'
                 ORDER BY vm.reg_no
             """,
             
             'get_vehicles_of_plant': lambda data: f"""
-                SELECT vm.reg_no, vm.bus_id, hm.name as plant_name
+                SELECT 
+                    vm.reg_no, 
+                    vm.bus_id, 
+                    hm.name as plant_name,
+                    CASE WHEN dm.name = 'EONINFOTECH' THEN 'Inactive' ELSE COALESCE(vm.status, 'Active') END as status
                 FROM vehicle_master vm 
                 JOIN hosp_master hm ON vm.id_hosp = hm.id_no 
+                LEFT JOIN district_master dm ON hm.id_dist = dm.id_no
                 WHERE hm.name ILIKE '%{data.get('plant_name', '')}%'
                 ORDER BY vm.reg_no
                 LIMIT 50
             """,
             
             'get_vehicle_hierarchy': lambda data: f"""
-                SELECT vm.reg_no, hm.name as plant_name, dm.name as district_name, zm.zone_name
+                SELECT 
+                    vm.reg_no, 
+                    CASE WHEN hm.name ILIKE '%EON OFFICE%' THEN 'Removed Facility' ELSE hm.name END as plant_name, 
+                    CASE WHEN dm.name = 'EONINFOTECH' THEN 'Inactive Region' ELSE dm.name END as district_name,
+                    CASE WHEN zm.zone_name = 'EONINFOTECH' THEN 'Inactive Region' ELSE zm.zone_name END as zone_name,
+                    CASE 
+                        WHEN hm.name ILIKE '%EON OFFICE%' THEN 'Device Removed'
+                        WHEN dm.name = 'EONINFOTECH' THEN 'Inactive' 
+                        ELSE COALESCE(vm.status, 'Active') 
+                    END as status
                 FROM vehicle_master vm 
                 LEFT JOIN hosp_master hm ON vm.id_hosp = hm.id_no 
                 LEFT JOIN district_master dm ON hm.id_dist = dm.id_no 
@@ -636,49 +748,49 @@ class IntelligentReasoning:
         
         sql_templates = {
             'vehicles_by_plant': {
-                'select': 'vm.reg_no, vm.bus_id, hm.name as plant_name',
+                'select': 'vm.reg_no, vm.bus_id, hm.name as plant_name, CASE WHEN dm.name = \'EONINFOTECH\' THEN \'Inactive\' ELSE COALESCE(vm.status, \'Active\') END as status',
                 'joins': complete_join_chain,
                 'where_template': "hm.name ILIKE '%{plant_name}%'"
             },
             'vehicles_by_region': {
-                'select': 'vm.reg_no, vm.bus_id, dm.name as region_name, hm.name as plant_name',
+                'select': 'vm.reg_no, vm.bus_id, CASE WHEN dm.name = \'EONINFOTECH\' THEN \'Inactive Region\' ELSE dm.name END as region_name, hm.name as plant_name, CASE WHEN dm.name = \'EONINFOTECH\' THEN \'Inactive\' ELSE COALESCE(vm.status, \'Active\') END as status',
                 'joins': complete_join_chain,
-                'where_template': "dm.name ILIKE '%{region_name}%'"
+                'where_template': "dm.name ILIKE '%{region_name}%' OR ('{region_name}' IN ('eoninfotech', 'eon infotech') AND dm.name = 'EONINFOTECH')"
             },
             'vehicles_by_zone': {
-                'select': 'vm.reg_no, vm.bus_id, zm.zone_name, dm.name as region_name, hm.name as plant_name',
+                'select': 'vm.reg_no, vm.bus_id, CASE WHEN zm.zone_name = \'EONINFOTECH\' THEN \'Inactive Region\' ELSE zm.zone_name END as zone_name, CASE WHEN dm.name = \'EONINFOTECH\' THEN \'Inactive Region\' ELSE dm.name END as region_name, hm.name as plant_name, CASE WHEN dm.name = \'EONINFOTECH\' THEN \'Inactive\' ELSE COALESCE(vm.status, \'Active\') END as status',
                 'joins': complete_join_chain,
-                'where_template': "zm.zone_name ILIKE '%{zone_name}%'"
+                'where_template': "zm.zone_name ILIKE '%{zone_name}%' OR ('{zone_name}' IN ('eoninfotech', 'eon infotech') AND dm.name = 'EONINFOTECH')"
             },
             'plants_by_region': {
-                'select': 'hm.name as plant_name, hm.id_no as plant_id, dm.name as region_name',
+                'select': 'hm.name as plant_name, hm.id_no as plant_id, CASE WHEN dm.name = \'EONINFOTECH\' THEN \'Inactive Region\' ELSE dm.name END as region_name',
                 'joins': """
                 FROM hosp_master hm
                 LEFT JOIN district_master dm ON hm.id_dist = dm.id_no
                 """,
-                'where_template': "dm.name ILIKE '%{region_name}%'"
+                'where_template': "dm.name ILIKE '%{region_name}%' OR ('{region_name}' IN ('eoninfotech', 'eon infotech') AND dm.name = 'EONINFOTECH')"
             },
             'plants_by_location_smart': {
-                'select': 'hm.name as plant_name, hm.id_no as plant_id, dm.name as region_name',
+                'select': 'hm.name as plant_name, hm.id_no as plant_id, CASE WHEN dm.name = \'EONINFOTECH\' THEN \'Inactive Region\' ELSE dm.name END as region_name',
                 'joins': """
                 FROM hosp_master hm
                 LEFT JOIN district_master dm ON hm.id_dist = dm.id_no
                 """,
-                'where_template': "dm.name ILIKE '%{location_name}%'",
+                'where_template': "dm.name ILIKE '%{location_name}%' OR ('{location_name}' IN ('eoninfotech', 'eon infotech') AND dm.name = 'EONINFOTECH')",
                 'note': 'Use this for most location queries (Gujarat, Maharashtra, etc.) - they are typically districts'
             },
             'plants_by_zone': {
-                'select': 'hm.name as plant_name, hm.id_no as plant_id, dm.name as region_name, zm.zone_name',
+                'select': 'hm.name as plant_name, hm.id_no as plant_id, CASE WHEN dm.name = \'EONINFOTECH\' THEN \'Inactive Region\' ELSE dm.name END as region_name, CASE WHEN zm.zone_name = \'EONINFOTECH\' THEN \'Inactive Region\' ELSE zm.zone_name END as zone_name',
                 'joins': """
                 FROM hosp_master hm
                 LEFT JOIN district_master dm ON hm.id_dist = dm.id_no
                 LEFT JOIN zone_master zm ON dm.id_zone = zm.id_no
                 """,
-                'where_template': "zm.zone_name ILIKE '%{zone_name}%'",
+                'where_template': "zm.zone_name ILIKE '%{zone_name}%' OR ('{zone_name}' IN ('eoninfotech', 'eon infotech') AND dm.name = 'EONINFOTECH')",
                 'note': 'Use this ONLY when specifically asking for zone data or when location is confirmed to be a zone'
             },
             'full_hierarchy_for_vehicle': {
-                'select': 'vm.reg_no, vm.bus_id, hm.name as plant_name, dm.name as region_name, zm.zone_name',
+                'select': 'vm.reg_no, vm.bus_id, hm.name as plant_name, CASE WHEN dm.name = \'EONINFOTECH\' THEN \'Inactive Region\' ELSE dm.name END as region_name, CASE WHEN zm.zone_name = \'EONINFOTECH\' THEN \'Inactive Region\' ELSE zm.zone_name END as zone_name, CASE WHEN dm.name = \'EONINFOTECH\' THEN \'Inactive\' ELSE COALESCE(vm.status, \'Active\') END as status',
                 'joins': complete_join_chain,
                 'where_template': "vm.reg_no = '{vehicle_reg}'"
             }
@@ -722,7 +834,7 @@ class IntelligentReasoning:
         # Analyze what entities are mentioned to determine required joins
         entities_mentioned = {
             'vehicle': any(word in query_lower for word in ['vehicle', 'truck', 'bus', 'fleet', 'reg_no']),
-            'plant': any(word in query_lower for word in ['plant', 'hospital', 'facility', 'hosp']),
+            'plant': any(word in query_lower for word in ['plant', 'facility', 'hosp']),
             'region': any(word in query_lower for word in ['region', 'district']),
             'zone': any(word in query_lower for word in ['zone'])
         }
@@ -895,6 +1007,202 @@ class IntelligentReasoning:
             return template['sql'].format(where_clause="")
         
         return None
+    
+    def apply_business_rules(self, query, context):
+        """Apply domain-specific business rules to queries"""
+        business_context = {'rules_applied': [], 'query_modifications': [], 'data_masking': None}
+        
+        if not self.db_parser:
+            return business_context
+            
+        try:
+            # Check if this is a specific vehicle query first
+            vehicle_check = self.check_for_removed_vehicle_query(query)
+            
+            # Get business context for the query
+            query_context = self.db_parser.get_business_context_for_query(query)
+            
+            # Apply EONINFOTECH/EON OFFICE rules if applicable
+            if query_context['eoninfotech_rule']['applies']:
+                rule = query_context['eoninfotech_rule']
+                
+                if rule['rule'] == 'eon_office_removed_vehicles':
+                    # Special handling for EON OFFICE vehicles
+                    business_context['rules_applied'].append({
+                        'rule_name': 'eon_office_removed_vehicles',
+                        'description': rule['description'],
+                        'impact': 'Vehicle device has been removed - show removal message instead of details'
+                    })
+                    
+                    business_context['query_modifications'].append({
+                        'type': 'device_removal',
+                        'modification': 'Replace vehicle details with removal message',
+                        'suggested_response': 'Show device removal message'
+                    })
+                    
+                elif rule['rule'] == 'eoninfotech_inactive_vehicles':
+                    # Regular EONINFOTECH handling
+                    business_context['rules_applied'].append({
+                        'rule_name': 'eoninfotech_inactive_vehicles',
+                        'description': rule['description'],
+                        'impact': 'All vehicles in this region are considered inactive'
+                    })
+                    
+                    business_context['query_modifications'].append({
+                        'type': 'status_filter',
+                        'modification': 'Add inactive vehicle filter for EONINFOTECH region',
+                        'suggested_where_clause': "AND (dm.name != 'EONINFOTECH' OR vm.status = 'inactive')"
+                    })
+                
+                # Add data masking instructions
+                if 'data_masking' in rule:
+                    business_context['data_masking'] = rule['data_masking']
+                    
+                # Store vehicle query info for later use
+                if vehicle_check['is_vehicle_query']:
+                    business_context['vehicle_query'] = vehicle_check
+                
+            return business_context
+            
+        except Exception as e:
+            print(f"⚠️ Error applying business rules: {e}")
+            return business_context
+    
+    def apply_data_masking(self, query_result, business_context):
+        """Apply data masking based on business rules"""
+        if not business_context.get('data_masking'):
+            return query_result
+            
+        # Use centralized masker if available
+        if self.data_masker:
+            # Special handling for vehicle queries that should show removal message
+            if (business_context.get('data_masking', {}).get('removal_message') and 
+                business_context.get('vehicle_query', {}).get('is_vehicle_query')):
+                
+                return self.data_masker.process_vehicle_query_result(query_result, hide_removed=True)
+            else:
+                return self.data_masker.mask_query_result(query_result)
+        
+        # Fallback masking logic
+        if business_context['data_masking'].get('mask_eoninfotech_region'):
+            if isinstance(query_result, dict) and 'rows' in query_result:
+                # Check for removal messages first
+                if business_context['data_masking'].get('removal_message'):
+                    # For EON OFFICE vehicles, replace with removal message
+                    removal_messages = []
+                    filtered_rows = []
+                    
+                    for row in query_result['rows']:
+                        # Check if this is an EON OFFICE vehicle
+                        is_eon_office = any(
+                            ('plant' in str(key).lower() and 'eon office' in str(value).lower())
+                            for key, value in row.items()
+                        )
+                        
+                        if is_eon_office:
+                            vehicle_reg = row.get('reg_no', row.get('vehicle_reg', 'Unknown'))
+                            removal_messages.append(f"Vehicle {vehicle_reg}'s device has been removed.")
+                        else:
+                            if self.db_parser:
+                                filtered_rows.append(self.db_parser.mask_eoninfotech_data(row))
+                            else:
+                                filtered_rows.append(row)
+                    
+                    query_result['rows'] = filtered_rows
+                    if removal_messages:
+                        query_result['removal_messages'] = removal_messages
+                        
+                else:
+                    # Regular EONINFOTECH masking
+                    if self.db_parser:
+                        query_result['rows'] = self.db_parser.mask_eoninfotech_in_list(query_result['rows'])
+                    
+                # Update column headers if needed
+                if 'columns' in query_result:
+                    masked_columns = []
+                    for col in query_result['columns']:
+                        if isinstance(col, dict) and col.get('name'):
+                            if 'eoninfotech' in col['name'].lower():
+                                col['name'] = col['name'].replace('EONINFOTECH', 'Inactive Region').replace('eoninfotech', 'inactive_region')
+                        masked_columns.append(col)
+                    query_result['columns'] = masked_columns
+                    
+        return query_result
+    
+    def generate_masked_sql_for_eoninfotech(self, original_sql):
+        """Generate SQL that masks EONINFOTECH data at query level"""
+        if self.data_masker:
+            return self.data_masker.mask_sql_query(original_sql)
+        
+        # Fallback SQL masking
+        if not original_sql:
+            return original_sql
+            
+        masked_sql = original_sql
+        
+        # Add CASE statements to mask EONINFOTECH in SELECT clauses
+        region_patterns = [
+            (r'(dm\.name\s+as\s+region_name)', "CASE WHEN dm.name = 'EONINFOTECH' THEN 'Inactive Region' ELSE dm.name END as region_name"),
+            (r'(dm\.name\s+as\s+district_name)', "CASE WHEN dm.name = 'EONINFOTECH' THEN 'Inactive Region' ELSE dm.name END as district_name"),
+            (r'(zm\.zone_name)', "CASE WHEN zm.zone_name = 'EONINFOTECH' THEN 'Inactive Region' ELSE zm.zone_name END as zone_name"),
+            (r'(dm\.name)(?!\s+as)', "CASE WHEN dm.name = 'EONINFOTECH' THEN 'Inactive Region' ELSE dm.name END"),
+        ]
+        
+        for pattern, replacement in region_patterns:
+            masked_sql = re.sub(pattern, replacement, masked_sql, flags=re.IGNORECASE)
+            
+        # Add status indication for EONINFOTECH vehicles
+        if 'vehicle_master vm' in masked_sql and 'SELECT' in masked_sql.upper():
+            # Add status column if not present
+            if 'vm.status' not in masked_sql and 'status' not in masked_sql.lower():
+                # Insert status column after vehicle info
+                select_match = re.search(r'SELECT\s+(.*?)\s+FROM', masked_sql, re.IGNORECASE | re.DOTALL)
+                if select_match:
+                    select_part = select_match.group(1)
+                    if 'vm.reg_no' in select_part:
+                        new_select = select_part + ", CASE WHEN dm.name = 'EONINFOTECH' THEN 'Inactive' ELSE COALESCE(vm.status, 'Active') END as status"
+                        masked_sql = masked_sql.replace(select_part, new_select)
+                        
+        return masked_sql
+
+    def check_for_removed_vehicle_query(self, query_text):
+        """Check if this is a query for a specific vehicle that might be removed"""
+        query_lower = query_text.lower()
+        
+        # Patterns that indicate specific vehicle queries
+        vehicle_query_patterns = [
+            r'(?:vehicle|truck)\s+([A-Z0-9\-]+)',  # "vehicle ABC-123"
+            r'(?:reg\s+no|registration)\s+([A-Z0-9\-]+)',  # "reg no ABC-123"
+            r'(?:details|info|information).*(?:vehicle|truck)\s+([A-Z0-9\-]+)',  # "details of vehicle ABC-123"
+            r'([A-Z0-9\-]+).*(?:vehicle|truck)',  # "ABC-123 vehicle"
+        ]
+        
+        for pattern in vehicle_query_patterns:
+            match = re.search(pattern, query_text, re.IGNORECASE)
+            if match:
+                vehicle_reg = match.group(1)
+                return {
+                    'is_vehicle_query': True,
+                    'vehicle_reg': vehicle_reg,
+                    'query_type': 'specific_vehicle_details'
+                }
+        
+        return {'is_vehicle_query': False}
+    
+    def should_show_removal_message(self, vehicle_data):
+        """Check if we should show removal message instead of vehicle details"""
+        if self.data_masker:
+            return self.data_masker.should_hide_vehicle_details(vehicle_data)
+        return False
+    
+    def create_vehicle_removal_response(self, vehicle_reg, query_result=None):
+        """Create a response for removed vehicles"""
+        base_message = f"Vehicle {vehicle_reg}'s device has been removed."
+        
+        if query_result and query_result.get('removal_messages'):
+            return query_result['removal_messages'][0]
+        
+        return base_message
 
 def test_intelligent_reasoning():
     """Test the intelligent reasoning system"""

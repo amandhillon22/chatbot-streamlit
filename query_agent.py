@@ -226,14 +226,14 @@ def english_to_sql(prompt, chat_context=None):
         history_text = ""
 
     # 🏭 STRICT HIERARCHICAL PLANT GUIDANCE 
-    if re.search(r'\b(plant|site|hospital|facility|factory|location|mohali|ludhiana|derabassi|punjab|gujarat|maharashtra)\b', prompt, re.IGNORECASE):
+    if re.search(r'\b(plant|site|facility|factory|location|mohali|ludhiana|derabassi|punjab|gujarat|maharashtra)\b', prompt, re.IGNORECASE):
         plant_guidance = """
 🏭 **PLANT QUERY GUIDANCE - CRITICAL CLARIFICATION:**
 
-⚠️ **MOST IMPORTANT**: hosp_master table is **PLANT MASTER**, NOT hospital master!
+⚠️ **MOST IMPORTANT**: hosp_master table is **PLANT MASTER**, NOT medical facility master!
 - Despite the name "hosp_master", this table contains **PLANT/FACILITY DATA**
 - Contains: Plant names, plant locations, factory information, site details
-- **NEVER** interpret as medical hospitals or healthcare facilities
+- **NEVER** interpret as medical facilities or healthcare institutions
 
 ✅ **ALWAYS USE hosp_master for ALL plant/facility queries**
 - Plant ID: hm.id_no
@@ -257,10 +257,10 @@ def english_to_sql(prompt, chat_context=None):
 2. JOIN with hosp_master to find plant by name
 3. Use ILIKE '%plant_name%' for flexible name matching
 4. Show reg_no (registration number) as primary vehicle identifier
-5. **REMEMBER**: hosp_master = plant data, NOT hospital data
+5. **REMEMBER**: hosp_master = plant data, NOT medical data
 
 ❌ **NEVER USE**: plant_schedule, plant_master, or any other table for plant data
-❌ **NEVER ASSUME**: hosp_master contains hospital/medical data - it's PLANT data!
+❌ **NEVER ASSUME**: hosp_master contains medical data - it's PLANT data!
 """
     else:
         plant_guidance = ""
@@ -389,12 +389,12 @@ Examples:
 ⚠️ **CRITICAL**: States like Gujarat, Maharashtra, West Bengal are typically in district_master.name, not zone_master.zone_name
 """
 
-    # Plant/Hospital queries - ONLY hosp_master
-    if re.search(r'\b(plant|hospital|facility)\b', prompt, re.IGNORECASE):
+    # Plant/Facility queries - ONLY hosp_master
+    if re.search(r'\b(plant|facility)\b', prompt, re.IGNORECASE):
         hierarchy_guidance += """
 🏭 **PLANT QUERIES - ABSOLUTE RULE:**
 ⚠️ **CRITICAL**: ALWAYS and ONLY use hosp_master table for plant queries
-⚠️ **IMPORTANT**: hosp_master contains PLANT DATA, not hospital/medical data!
+⚠️ **IMPORTANT**: hosp_master contains PLANT DATA, not medical data!
 ❌ **NEVER USE**: plant_schedule, plant_master, or any other table for plant data
 🔑 **PLANT COLUMN NAME**: Use `name` (NOT `plant_name`) for hosp_master table
 
@@ -413,7 +413,7 @@ Examples:
   JOIN hosp_master hm ON vm.id_hosp = hm.id_no 
   WHERE hm.name ILIKE '%Mohali%'
 
-🔑 **REMEMBER**: hosp_master = PLANT/FACTORY data (NOT medical hospitals)
+🔑 **REMEMBER**: hosp_master = PLANT/FACTORY data (NOT medical facilities)
 """
 
     # Vehicle hierarchy queries - ONLY vehicle_master
@@ -434,7 +434,7 @@ Examples:
   WHERE vm.reg_no = 'X'
 """
 
-    # 🚀 ENHANCED EMBEDDING PROCESSING with Advanced Table Mapping
+    # 🚀 ENHANCED EMBEDDING PROCESSING with Advanced Table Mapping and Database Reference
     relevant_schema_text = SCHEMA_PROMPT  # Default fallback
     
     if EMBEDDINGS_AVAILABLE and embedding_manager:
@@ -463,7 +463,7 @@ Examples:
                     print(f"📊 Fallback to embeddings: {len(embedding_results)} tables")
                     relevant_tables = embedding_results
             else:
-                print(f"📊 Using embeddings only: {len(embedding_results)} tables")
+                print(f"📊 Using embeddings with database reference: {len(embedding_results)} tables")
                 relevant_tables = embedding_results
             
             if relevant_tables:
@@ -475,7 +475,7 @@ Examples:
                             table_key, similarity, reason = table_info
                         else:
                             table_key, similarity = table_info[:2]
-                            reason = "embedding"
+                            reason = "embedding/reference"
                         
                         schema_name, table_name = table_key.split('.', 1)
                         if schema_name in SCHEMA_DICT and table_name in SCHEMA_DICT[schema_name]:
@@ -510,11 +510,11 @@ You are an intelligent SQL assistant for multiple PostgreSQL schemas with advanc
 
 🏭 **CRITICAL TABLE CLARIFICATIONS - NEVER MISINTERPRET:**
 
-⚠️ **MOST IMPORTANT**: `hosp_master` table contains **PLANT DATA**, NOT hospital data!
+⚠️ **MOST IMPORTANT**: `hosp_master` table contains **PLANT DATA**, NOT medical data!
 - **hosp_master = PLANT MASTER TABLE** (despite the misleading name)
 - Contains: Plant names, plant IDs, plant addresses, plant locations
 - Use for: All plant-related queries, plant locations, facility information
-- **NEVER** interpret as hospital, medical facility, or healthcare data
+- **NEVER** interpret as medical facility, healthcare data
 
 🔑 **CORRECT TABLE MEANINGS:**
 - **hosp_master**: PLANTS (factories, facilities, sites) - Use `hm.name` for plant names
@@ -523,10 +523,10 @@ You are an intelligent SQL assistant for multiple PostgreSQL schemas with advanc
 - **vehicle_master**: VEHICLES/TRUCKS/FLEET - Use `vm.reg_no` for vehicle registration
 
 📋 **QUERY INTERPRETATION RULES:**
-- "Show plants" → SELECT FROM hosp_master (NOT hospitals!)
+- "Show plants" → SELECT FROM hosp_master (NOT medical facilities!)
 - "Vehicles in Mohali" → JOIN vehicle_master with hosp_master WHERE plant name ILIKE '%Mohali%'
 - "Plants in Punjab" → JOIN hosp_master with district_master WHERE region name ILIKE '%Punjab%'
-- **NEVER** assume hosp_master contains medical/hospital information
+- **NEVER** assume hosp_master contains medical information
 
 {id_relationship_guide}
 

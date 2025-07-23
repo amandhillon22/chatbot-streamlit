@@ -123,7 +123,7 @@ Plant/Facility (hosp_master)
 Vehicle (vehicle_master)
 ```
 
-**Critical Innovation**: Despite the misleading table name `hosp_master`, the system correctly identifies this as **plant data**, not hospital data, through intelligent prompt engineering.
+**Critical Innovation**: Despite the misleading table name `hosp_master`, the system correctly identifies this as **plant data**, not medical data, through intelligent prompt engineering.
 
 ### 3. **Smart Location Detection**
 - **Primary**: Check `district_master.name` for location queries
@@ -251,7 +251,7 @@ The system works with a complex fleet management schema:
 ### **Core Tables**
 - `zone_master` - Geographic zones (use `zone_name`)
 - `district_master` - Districts/states (use `name`)
-- `hosp_master` - Plants/facilities (use `name`) **[CRITICAL: Not hospitals!]**
+- `hosp_master` - Plants/facilities (use `name`) **[CRITICAL: Not medical facilities!]**
 - `vehicle_master` - Vehicle fleet (use `reg_no`)
 
 ### **Relationship Chain**
@@ -288,7 +288,7 @@ zone_master.id_no ← district_master.id_zone
 ## 🚧 Key Challenges Solved
 
 ### 1. **Misleading Table Names**
-**Problem**: `hosp_master` sounds like hospital data but contains plant/facility information
+**Problem**: `hosp_master` sounds like medical data but contains plant/facility information
 **Solution**: Intelligent prompt engineering that explicitly clarifies table purposes
 
 ### 2. **Complex Hierarchical Relationships**
