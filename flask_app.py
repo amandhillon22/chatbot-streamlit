@@ -7,12 +7,20 @@ from dotenv import load_dotenv
 import time
 from functools import wraps
 from user_manager import user_manager, chat_history_manager
+from config import DevelopmentConfig, ProductionConfig
 
 # Load environment variables
 load_dotenv()
 
-app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY', 'your-secret-key-change-this-in-production')
+def create_app(config_object=DevelopmentConfig):
+    app = Flask(__name__)
+    app.config.from_object(config_object)
+    app.secret_key = os.getenv('SECRET_KEY', 'diya-chatbot-secret-key-change-in-production')
+    return app
+
+# Create the Flask application with the appropriate configuration
+env = os.getenv('FLASK_ENV', 'development')
+app = create_app(ProductionConfig if env == 'production' else DevelopmentConfig)
 
 # --- Serve the React or static frontend from frontend_new directory ---
 @app.route('/', defaults={'path': ''})
@@ -424,5 +432,10 @@ def chat():
     })
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    config = app.config
+    port = int(os.environ.get('PORT', config.get('PORT', 5000)))
+    app.run(
+        host='0.0.0.0',  # Listen on all available interfaces
+        port=port,
+        debug=config.get('DEBUG', False)
+    )

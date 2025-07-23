@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-Database Reference Parser - Extracts structured intelligence from database_reference.md
-Integrates with existing embeddings system without disrupting workflow
+Database Reference Parser - Extracts structured intelligence from dat                'crm_complaint_dtls'           # Track complaint status (use 'Y' for Open, 'N' for Closed)base_reference.md
+Integrates wit            "Store customer complaint details and status (active_status column: must use exact value 'Y' to find open complaints, 'N' for closed - NEVER use 'Open'/'Closed' words)",
+            "Links complaints to categories and site visits",
+            "CRITICAL: When filtering by status, always use exact values: active_status = 'Y' for open, active_status = 'N' for closed"existing embeddings system without disrupting workflow
 """
 
 import os
@@ -16,6 +18,15 @@ class DatabaseReferenceParser:
         self.table_metadata = {}
         self.business_context = {}
         self.transportation_keywords = self._load_transportation_keywords()
+        
+        # Query status value mappings
+        self.status_values = {
+            'crm_complaint_dtls': {
+                'active': 'Y',  # CRITICAL: Use exact value 'Y' for active/open complaints
+                'inactive': 'N', # CRITICAL: Use exact value 'N' for closed complaints
+                'column': 'active_status'  
+            }
+        }
         
         # Import EONINFOTECH masker for consistent data masking
         try:
@@ -67,13 +78,38 @@ class DatabaseReferenceParser:
             'sales': ['so_details', 'so_master', 'sales_report'],
             
             # CRM & Complaint Management
-            'complaint': ['crm_complaint_dtls', 'crm_complaint_category', 'crm_complaint_category_type', 'crm_site_visit_dtls'],
-            'site_visit': ['crm_site_visit_dtls', 'customer_ship_details', 'site_master'],
-            'feedback': ['crm_site_visit_dtls', 'crm_complaint_dtls'],
-            'issue': ['crm_complaint_dtls', 'crm_complaint_category', 'crm_complaint_category_type'],
-            'resolution': ['crm_site_visit_dtls', 'crm_complaint_dtls'],
-            'service': ['crm_complaint_dtls', 'crm_site_visit_dtls'],
-            'crm': ['crm_complaint_dtls', 'crm_complaint_category', 'crm_site_visit_dtls', 'customer_ship_details'],
+            'complaint': [
+                'crm_complaint_dtls',          # Main complaint table (active_status: use 'Y' for Open, 'N' for Closed)
+                'crm_complaint_category',      # Categories like 'Delivery', 'Quality'
+                'crm_complaint_category_type', # Specific types under each category
+                'crm_site_visit_dtls',        # Site visit records
+                'customer_ship_details'        # Customer shipping info
+            ],
+            'site_visit': [
+                'crm_site_visit_dtls',
+                'crm_complaint_dtls',          # Reference to complaints (active_status column: value must be 'Y' for Open or 'N' for Closed)
+                'customer_ship_details'
+            ],
+            'feedback': [
+                'crm_site_visit_dtls',
+                'crm_complaint_dtls'           # Links to complaint status (Y=Open, N=Closed)
+            ],
+            'customer_complaint': [
+                'crm_complaint_dtls',           # Main complaint table (active_status: Y=Open, N=Closed)
+                'customer_ship_details',
+                'crm_complaint_category',
+                'crm_site_visit_dtls'
+            ],
+            'shipping': [
+                'customer_ship_details',
+                'ship_to_address'
+            ],
+            'complaint_tracking': [
+                'crm_complaint_dtls',           # Track complaint status (active_status column accepts only 'Y' or 'N' values - not 'Open'/'Closed')
+                'crm_site_visit_dtls',
+                'crm_complaint_category',
+                'crm_complaint_category_type'
+            ],
             
             # Location & Geography  
             'plant': ['plant_data', 'plant_distance', 'plnt_report', 'hosp_master'],
@@ -192,8 +228,45 @@ class DatabaseReferenceParser:
     def _infer_business_context(self, table_name):
         """Infer business context from table name"""
         table_lower = table_name.lower()
-        
         contexts = []
+        
+        # CRM Complaint System Contexts
+        crm_contexts = {
+            'crm_complaint_dtls': [
+                "Main complaint tracking and management system",
+                "Stores customer complaint details and status (active_status column: must use exact value 'Y' to find open complaints, 'N' for closed - do not use 'Open'/'Closed' words)",
+                "Links complaints to categories and site visits"
+            ],
+            'crm_complaint_category': [
+                "Complaint categorization system",
+                "Top-level complaint classification",
+                "Organizes complaints by main categories (e.g., Delivery, Quality)"
+            ],
+            'crm_complaint_category_type': [
+                "Detailed complaint type classification",
+                "Sub-categories under main complaint categories",
+                "Specific issue types for better tracking"
+            ],
+            'crm_site_visit_dtls': [
+                "Site visit records for complaint resolution",
+                "Tracks resolution attempts and outcomes",
+                "Links complaints to on-site actions"
+            ],
+            'customer_ship_details': [
+                "Customer shipping and delivery management",
+                "Links customers to shipping addresses",
+                "Used for complaint delivery context"
+            ],
+            'ship_to_address': [
+                "Detailed shipping address information",
+                "Delivery location management",
+                "Address validation and verification"
+            ]
+        }
+        
+        # Add CRM-specific context if applicable
+        if table_lower in crm_contexts:
+            contexts.extend(crm_contexts[table_lower])
         
         # Core business entities
         if any(word in table_lower for word in ['trip', 'journey']):
@@ -202,6 +275,8 @@ class DatabaseReferenceParser:
             contexts.append("Fleet and vehicle operations")
         if any(word in table_lower for word in ['customer', 'client']):
             contexts.append("Customer relationship management")
+            if 'complaint' in table_lower:
+                contexts.append("Complaint status tracking (active_status column requires exact values: use 'Y' to find open complaints, 'N' for closed)")
         if any(word in table_lower for word in ['route', 'distance']):
             contexts.append("Route planning and distance tracking")
         if any(word in table_lower for word in ['fuel', 'maintenance']):
@@ -210,10 +285,6 @@ class DatabaseReferenceParser:
             contexts.append("Plant and location management")
         if any(word in table_lower for word in ['so_', 'order', 'sales']):
             contexts.append("Sales order and business operations")
-        if any(word in table_lower for word in ['crm', 'complaint', 'site_visit']):
-            contexts.append("Customer complaint and issue resolution")
-        if 'ship_to' in table_lower:
-            contexts.append("Customer shipping and delivery information")
             
         # Hierarchical context
         if 'zone_master' == table_lower:
@@ -227,16 +298,6 @@ class DatabaseReferenceParser:
         if 'plant_data' == table_lower:
             contexts.append("Plant operational metrics and readings")
         
-        # CRM specific contexts
-        if 'crm_complaint_dtls' == table_lower:
-            contexts.append("Main complaint tracking and management")
-        if 'crm_complaint_category' == table_lower:
-            contexts.append("Complaint categorization system")
-        if 'crm_site_visit_dtls' == table_lower:
-            contexts.append("Site visit records for complaint resolution")
-        if 'customer_ship_details' == table_lower:
-            contexts.append("Customer shipping and delivery management")
-        
         return "; ".join(contexts) if contexts else "General transportation data"
     
     def _infer_relationships(self, table_name):
@@ -244,6 +305,42 @@ class DatabaseReferenceParser:
         table_lower = table_name.lower()
         relationships = []
         
+        # CRM Complaint System Relationships
+        crm_relationships = {
+            'crm_complaint_dtls': [
+                'customer_ship_details',      # Links complaints to customer shipping info
+                'crm_complaint_category',     # Categorizes complaints (active_status in main table: Y=Open, N=Closed)
+                'crm_complaint_category_type',# Sub-categorizes complaints
+                'crm_site_visit_dtls',       # Links to resolution visits
+                'hosp_master'                # Links to plant/facility
+            ],
+            'crm_site_visit_dtls': [
+                'crm_complaint_dtls',        # Links visits to complaints (complaint status: Y=Open, N=Closed)
+                'customer_ship_details',     # Links to customer location
+                'hosp_master'               # Links to plant/facility
+            ],
+            'crm_complaint_category': [
+                'crm_complaint_category_type',# Parent-child category relationship
+                'crm_complaint_dtls'        # Links categories to complaints (check active_status: Y=Open, N=Closed)
+            ],
+            'crm_complaint_category_type': [
+                'crm_complaint_category',    # Child-parent category relationship
+                'crm_complaint_dtls'        # Links types to complaints
+            ],
+            'customer_ship_details': [
+                'ship_to_address',          # Links to detailed address info
+                'crm_complaint_dtls',       # Links to complaints
+                'crm_site_visit_dtls'      # Links to site visits
+            ],
+            'ship_to_address': [
+                'customer_ship_details'     # Links back to shipping details
+            ]
+        }
+        
+        # Add CRM-specific relationships if applicable
+        if table_lower in crm_relationships:
+            relationships.extend(crm_relationships[table_lower])
+            
         # Organizational hierarchy relationships (Zone → District → Plant → Vehicle)
         if 'zone_master' == table_lower:
             relationships.extend(['district_master'])
@@ -254,27 +351,13 @@ class DatabaseReferenceParser:
         if 'vehicle_master' == table_lower:
             relationships.extend(['hosp_master', 'trip_report', 'driver_master', 'fuel_report', 'veh_type'])
         
-        # Other site/customer relationships  
+        # Other site/customer relationships
         if 'site_master' == table_lower:
             relationships.extend(['hosp_master', 'customer_detail', 'customer_ship_details'])
         if 'customer_detail' == table_lower:
             relationships.extend(['site_master', 'hosp_master', 'customer_ship_details'])
         if 'plant_data' == table_lower:
             relationships.extend(['hosp_master'])
-        
-        # CRM complaint system relationships
-        if 'crm_complaint_dtls' == table_lower:
-            relationships.extend(['customer_ship_details', 'crm_complaint_category', 'crm_complaint_category_type', 'crm_site_visit_dtls', 'hosp_master'])
-        if 'crm_complaint_category' == table_lower:
-            relationships.extend(['crm_complaint_category_type', 'crm_complaint_dtls'])
-        if 'crm_complaint_category_type' == table_lower:
-            relationships.extend(['crm_complaint_category', 'crm_complaint_dtls'])
-        if 'crm_site_visit_dtls' == table_lower:
-            relationships.extend(['crm_complaint_dtls', 'customer_ship_details', 'hosp_master'])
-        if 'customer_ship_details' == table_lower:
-            relationships.extend(['ship_to_address', 'crm_complaint_dtls', 'crm_site_visit_dtls'])
-        if 'ship_to_address' == table_lower:
-            relationships.extend(['customer_ship_details'])
         
         # Vehicle type relationships
         if 'vehicle_master' == table_lower:
@@ -292,7 +375,15 @@ class DatabaseReferenceParser:
         if 'route' in table_lower:
             relationships.extend(['trip_report', 'distance_report'])
         
-        return relationships
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_relationships = []
+        for rel in relationships:
+            if rel not in seen:
+                seen.add(rel)
+                unique_relationships.append(rel)
+                
+        return unique_relationships
     
     def _estimate_table_size(self, table_name):
         """Estimate table size based on name patterns"""
@@ -317,10 +408,14 @@ class DatabaseReferenceParser:
         
         for keyword, table_list in self.transportation_keywords.items():
             for table in table_list:
+                context = f"Transportation table related to {keyword}"
+                if table == 'crm_complaint_dtls':
+                    context = f"Complaint management table (active_status: use 'Y' for Open complaints, 'N' for Closed)"
+                
                 if table not in basic_tables:
                     basic_tables[table] = {
                         'columns': [],
-                        'business_context': f"Transportation table related to {keyword}",
+                        'business_context': context,
                         'relationships': [],
                         'key_columns': ['id'],
                         'size_estimate': 'medium'
@@ -397,7 +492,7 @@ class DatabaseReferenceParser:
         if any(word in query_lower for word in ['analyze', 'compare', 'trend', 'average']):
             intents.append('analysis')
         
-        # Operational intents
+        # Operational intents (includes complaint status: Y=Open, N=Closed)
         if any(word in query_lower for word in ['status', 'current', 'active', 'pending']):
             intents.append('operational')
         
@@ -429,8 +524,28 @@ class DatabaseReferenceParser:
                 hints.append(f"Consider adding LIMIT for {table} (large table)")
             elif 'trip' in table.lower():
                 hints.append(f"Consider date filtering for {table}")
+            elif 'crm_complaint_dtls' in table.lower():
+                hints.append(f"For complaint status filters, active_status must be compared with exact value 'Y' (not 'Open') or 'N' (not 'Closed')")
         
         return hints
+    
+    def get_complaint_status_value(self, status_text):
+        """Convert status text to correct database value for crm_complaint_dtls.active_status"""
+        status_lower = status_text.lower().strip()
+        
+        # Direct value matches
+        if status_lower in ['y', 'n']:
+            return status_lower.upper()
+        
+        # Handle various forms of "open"
+        if status_lower in ['open', 'active', 'ongoing', 'in progress', 'not closed']:
+            return 'Y'  # CRITICAL: Use exact 'Y' value
+        
+        # Handle various forms of "closed"    
+        if status_lower in ['closed', 'inactive', 'complete', 'completed', 'resolved']:
+            return 'N'  # CRITICAL: Use exact 'N' value
+        
+        return None  # If no match found
     
     def apply_business_rules(self, context_data):
         """Apply domain-specific business rules to the parsed data"""

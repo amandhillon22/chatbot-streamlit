@@ -166,6 +166,13 @@ class IntelligentReasoning:
                     'target_column': 'customer_name'
                 }
             },
+            'complaint_status': {
+                'from_complaint_id': {
+                    'source_tables': ['crm_complaint_dtls'],
+                    'key_column': 'id_no',
+                    'target_column': "CASE status WHEN 'Y' THEN 'Open' WHEN 'N' THEN 'Closed' ELSE status END as status"
+                }
+            },
             'vehicle_details': {
                 'from_reg_no': {
                     'source_tables': ['vehicle_master', 'mega_trips'],
@@ -279,6 +286,16 @@ class IntelligentReasoning:
                 'extractor': self._extract_customer_id_direct
             },
             {
+                'pattern': r'(?:status|state).*(?:complaint|complaint\s+id)\s*(\d+)',
+                'intent': 'get_complaint_status',
+                'extractor': self._extract_complaint_id_direct
+            },
+            {
+                'pattern': r'(?:show|list|get).*complaints.*(?:status\s+is|with\s+status)\s+(\w+)',
+                'intent': 'get_complaints_by_status',
+                'extractor': self._extract_complaint_status
+            },
+            {
                 'pattern': r'(?:what|tell.*about|details.*of).*(?:that|the|this)\s+(?:plant|customer|vehicle)',
                 'intent': 'get_details_from_last_context',
                 'extractor': self._extract_from_last_context
@@ -360,6 +377,22 @@ class IntelligentReasoning:
         
         return None
     
+    def _extract_complaint_status(self, query: str, match, chat_context) -> Optional[Dict]:
+        """Extract status value for complaint lookup"""
+        status = match.group(1).lower() if match.groups() else None
+        if status:
+            # Map common status terms to Y/N
+            if status in ['open', 'active', 'ongoing']:
+                return {'status': 'Y'}
+            elif status in ['closed', 'resolved', 'completed', 'done']:
+                return {'status': 'N'}
+        return None
+
+    def _extract_complaint_id_direct(self, query: str, match, chat_context) -> Optional[Dict]:
+        """Extract complaint ID for status lookup"""
+        complaint_id = match.group(1) if match.groups() else None
+        return {'complaint_id': complaint_id} if complaint_id else None
+
     def _extract_customer_id_direct(self, query: str, match, chat_context) -> Optional[Dict]:
         """Extract customer ID directly mentioned in query"""
         customer_id = match.group(1)
@@ -426,6 +459,30 @@ class IntelligentReasoning:
         """
         intent = reasoning_result['intent']
         extracted_data = reasoning_result['extracted_data']
+
+        # Handle complaint status queries
+        if intent == 'get_complaints_by_status':
+            status = extracted_data.get('status')
+            if status:
+                return f"""SELECT COUNT(T1.id_no)
+                          FROM public.crm_complaint_dtls AS T1 
+                          WHERE T1.active_status ILIKE '{status}'"""
+        if intent == 'get_complaint_status':
+            complaint_id = extracted_data.get('complaint_id')
+            if complaint_id:
+                return f"""
+                    SELECT 
+                        cd.id_no as complaint_id,
+                        cd.complaint_date,
+                        CASE cd.status 
+                            WHEN 'Y' THEN 'Open'
+                            WHEN 'N' THEN 'Closed'
+                            ELSE cd.status
+                        END as status
+                    FROM crm_complaint_dtls cd
+                    WHERE cd.id_no = {complaint_id}
+                    LIMIT 1;
+                """
         
         # Check for hierarchical queries first
         if intent.startswith(('get_zone_', 'get_region_', 'get_plant_', 'get_vehicles_', 'get_vehicle_hierarchy')):
@@ -477,6 +534,22 @@ class IntelligentReasoning:
         extracted_data = reasoning_result['extracted_data']
         intent = reasoning_result['intent']
         source = extracted_data.get('source', 'unknown')
+
+        # Handle complaint status count responses
+        if intent == 'get_complaints_by_status':
+            if query_result.get('sql') and 'rows' in query_result and query_result['rows']:
+                count = query_result['rows'][0].get('count', 0)
+                status_display = 'open' if extracted_data.get('status') == 'Y' else 'closed'
+                return f"Found {count} {status_display} complaints."
+            return "Counting complaints with the specified status..."
+
+        # Handle complaint status responses
+        if intent == 'get_complaint_status':
+            complaint_id = extracted_data.get('complaint_id')
+            if query_result.get('sql') and 'rows' in query_result and query_result['rows']:
+                status = query_result['rows'][0].get('status', 'Unknown')
+                return f"The status of complaint ID {complaint_id} is: {status}"
+            return f"Checking status for complaint ID {complaint_id}..."
         
         # Hierarchical response templates
         if intent.startswith(('get_zone_', 'get_region_', 'get_plant_', 'get_vehicles_', 'get_vehicle_hierarchy')):
