@@ -112,6 +112,55 @@ class IntelligentReasoning:
             }
         }
         
+        # Enhanced CRM Complaint Status System
+        self.complaint_status_mapping = {
+            'P': {
+                'description': 'Pending',
+                'category_based': True,
+                'assignments': {
+                    '1': {'pending_with': 'Plant Incharge', 'category_name': 'Operations'},
+                    '2': {'pending_with': 'Technical Manager/Incharge', 'category_name': 'Technical'}
+                },
+                'final_status': 'Open'
+            },
+            'QC': {'pending_with': 'HO QC', 'final_status': 'Open', 'description': 'Pending with HO QC'},
+            'BH': {'pending_with': 'Business Head', 'final_status': 'Open', 'description': 'Pending with Business Head'},
+            'TH': {'pending_with': 'Technical Head', 'final_status': 'Open', 'description': 'Pending with Technical Head'},
+            'CF': {'pending_with': 'CFO', 'final_status': 'Open', 'description': 'Pending with CFO'},
+            'MD': {'pending_with': 'MD', 'final_status': 'Open', 'description': 'Pending with MD'},
+            'C': {'pending_with': 'Completed', 'final_status': 'Closed', 'description': 'Complaint Closed'}
+        }
+
+        # Action Status Values for approval workflow
+        self.action_status_mapping = {
+            'A': {'description': 'Approved', 'status': 'Approved'},
+            'R': {'description': 'Rejected', 'status': 'Rejected'},
+            'P': {'description': 'Pending', 'status': 'Pending'}  # Default for null/empty values
+        }
+
+        # Action status columns in crm_site_visit_dtls table
+        self.action_status_columns = {
+            'ho_qc_action_status': 'HO QC Action Status (A=Approved, R=Rejected)',
+            'bh_action_status': 'Business Head Action Status (A=Approved, R=Rejected)', 
+            'th_action_status': 'Technical Head Action Status (A=Approved, R=Rejected)',
+            'cf_action_status': 'CFO Action Status (A=Approved, R=Rejected)',
+            'md_action_status': 'MD Action Status (A=Approved, R=Rejected)'
+        }
+
+        # Overall complaint status workflow logic
+        self.complaint_workflow_status = {
+            'no_site_visit': 'Pending for Site Visit',
+            'pending_rca': 'Pending for RCA',
+            'pending_testing': 'Pending for Third Party Testing',
+            'pending_execution': 'Pending for Execution/Rectification'
+        }
+
+        # Category mapping for business context
+        self.complaint_categories = {
+            '1': 'Operations',
+            '2': 'Technical'
+        }
+        
         # Common data relationship patterns - ENHANCED HIERARCHICAL
         self.relationship_patterns = {
             'plant_name': {
@@ -299,6 +348,137 @@ class IntelligentReasoning:
                 'pattern': r'(?:what|tell.*about|details.*of).*(?:that|the|this)\s+(?:plant|customer|vehicle)',
                 'intent': 'get_details_from_last_context',
                 'extractor': self._extract_from_last_context
+            },
+            
+            # CRM Complaint Status Patterns
+            {
+                'pattern': r'(?:status|state).*(?:complaint|complaint\s+id)\s*(\d+)',
+                'intent': 'get_complaint_status',
+                'extractor': self._extract_complaint_id_direct
+            },
+            {
+                'pattern': r'(?:show|list|get).*complaints.*(?:status\s+is|with\s+status)\s+(\w+)',
+                'intent': 'get_complaints_by_status',
+                'extractor': self._extract_complaint_status
+            },
+            {
+                'pattern': r'(?:complaint.*(?:pending\s+with|assigned\s+to)|(?:who|which).*(?:handling|responsible).*complaint)\s*(\d+)',
+                'intent': 'get_complaint_pending_with',
+                'extractor': self._extract_complaint_id_for_pending
+            },
+            {
+                'pattern': r'(?:overall\s+status|workflow\s+status|current\s+stage).*complaint\s*(\d+)',
+                'intent': 'get_complaint_workflow_status',
+                'extractor': self._extract_complaint_id_for_workflow
+            },
+            {
+                'pattern': r'(?:show|list).*complaints.*(?:pending\s+with|assigned\s+to|with)\s+([a-zA-Z\s]+)',
+                'intent': 'get_complaints_by_assignee',
+                'extractor': self._extract_assignee_for_complaints
+            },
+            {
+                'pattern': r'(?:complaints|complaint).*(?:pending\s+with|assigned\s+to|with)\s+([a-zA-Z\s]+)',
+                'intent': 'get_complaints_by_assignee',
+                'extractor': self._extract_assignee_for_complaints
+            },
+            {
+                'pattern': r'(?:action\s+status|approval\s+status|approval).*complaint\s*(\d+)',
+                'intent': 'get_complaint_action_status',
+                'extractor': self._extract_complaint_id_for_action_status
+            },
+            {
+                'pattern': r'(?:ho\s+qc|business\s+head|technical\s+head|cfo|md).*(?:approved|rejected|action).*complaint\s*(\d+)',
+                'intent': 'get_specific_action_status',
+                'extractor': self._extract_complaint_and_authority
+            },
+            {
+                'pattern': r'(?:show|list).*complaints.*(?:approved|rejected).*(?:by|from)\s+(ho\s+qc|business\s+head|technical\s+head|cfo|md)',
+                'intent': 'get_complaints_by_action_status',
+                'extractor': self._extract_authority_and_action
+            },
+            
+            # Product Correction Status Patterns
+            {
+                'pattern': r'(?:show|list|get).*complaints.*(?:product\s+correction|correction).*(?:done|completed|finished)',
+                'intent': 'get_complaints_with_product_correction_done',
+                'extractor': self._extract_product_correction_done
+            },
+            {
+                'pattern': r'(?:show|list|get).*complaints.*(?:product\s+correction|correction).*(?:not\s+done|pending|incomplete|missing)',
+                'intent': 'get_complaints_without_product_correction',
+                'extractor': self._extract_product_correction_not_done
+            },
+            {
+                'pattern': r'(?:show|list|get).*complaints.*(?:no|without|missing).*(?:product\s+correction|correction)',
+                'intent': 'get_complaints_without_product_correction',
+                'extractor': self._extract_product_correction_not_done
+            },
+            {
+                'pattern': r'(?:show|list|get).*complaints.*(?:with|having).*(?:product\s+correction|correction)',
+                'intent': 'get_complaints_with_product_correction_done',
+                'extractor': self._extract_product_correction_done
+            },
+            {
+                'pattern': r'(?:product\s+correction|correction).*(?:status|done|completed).*(?:complaint|complaint\s+id)\s*(\d+)',
+                'intent': 'get_complaint_product_correction_status',
+                'extractor': self._extract_complaint_id_for_product_correction
+            },
+            {
+                'pattern': r'(?:complaint|complaint\s+id)\s*(\d+).*(?:product\s+correction|correction).*(?:status|done|completed)',
+                'intent': 'get_complaint_product_correction_status',
+                'extractor': self._extract_complaint_id_for_product_correction
+            },
+            
+            # Category-based Complaint Patterns (Operation/Operations & Technical)
+            {
+                'pattern': r'(?:how\s+many|count|number\s+of).*complaints.*(?:of|in|from)\s+(?:operations?|operation)',
+                'intent': 'get_complaints_count_by_category',
+                'extractor': self._extract_operations_category_count
+            },
+            {
+                'pattern': r'(?:how\s+many|count|number\s+of).*complaints.*(?:of|in|from)\s+(?:technical|tech)',
+                'intent': 'get_complaints_count_by_category',
+                'extractor': self._extract_technical_category_count
+            },
+            {
+                'pattern': r'(?:show|list|get).*complaints.*(?:of|in|from)\s+(?:operations?|operation)',
+                'intent': 'get_complaints_by_category',
+                'extractor': self._extract_operations_category
+            },
+            {
+                'pattern': r'(?:show|list|get).*complaints.*(?:of|in|from)\s+(?:technical|tech)',
+                'intent': 'get_complaints_by_category',
+                'extractor': self._extract_technical_category
+            },
+            {
+                'pattern': r'(?:operations?|operation).*complaints',
+                'intent': 'get_complaints_by_category',
+                'extractor': self._extract_operations_category
+            },
+            {
+                'pattern': r'(?:technical|tech).*complaints',
+                'intent': 'get_complaints_by_category',
+                'extractor': self._extract_technical_category
+            },
+            {
+                'pattern': r'complaints.*(?:in|from)\s+(?:operations?|operation).*(?:category|dept|department)',
+                'intent': 'get_complaints_by_category',
+                'extractor': self._extract_operations_category
+            },
+            {
+                'pattern': r'complaints.*(?:in|from)\s+(?:technical|tech).*(?:category|dept|department)',
+                'intent': 'get_complaints_by_category',
+                'extractor': self._extract_technical_category
+            },
+            {
+                'pattern': r'complaints\s+(?:operations?|operation)(?:\s|$)',
+                'intent': 'get_complaints_by_category',
+                'extractor': self._extract_operations_category
+            },
+            {
+                'pattern': r'complaints\s+(?:technical|tech)(?:\s|$)',
+                'intent': 'get_complaints_by_category',
+                'extractor': self._extract_technical_category
             }
         ]
     
@@ -308,26 +488,35 @@ class IntelligentReasoning:
         Returns enhanced query info if reasoning is needed, None otherwise
         """
         user_query_lower = user_query.lower().strip()
+        print(f"🧠 [DEBUG] Analyzing query: '{user_query}'")
         
         # Check each intent pattern
-        for intent_config in self.intent_patterns:
+        for i, intent_config in enumerate(self.intent_patterns):
             pattern = intent_config['pattern']
             intent = intent_config['intent']
             extractor = intent_config['extractor']
             
             match = re.search(pattern, user_query_lower, re.IGNORECASE)
             if match:
+                print(f"🎯 [DEBUG] Pattern {i+1} matched! Intent: {intent}")
+                print(f"📝 [DEBUG] Pattern: {pattern}")
+                print(f"🔍 [DEBUG] Match groups: {match.groups()}")
+                
                 # Extract relevant data using the specific extractor
                 extracted_data = extractor(user_query, match, chat_context)
                 
                 if extracted_data:
+                    print(f"✅ [DEBUG] Data extracted: {extracted_data}")
                     return {
                         'original_query': user_query,
                         'intent': intent,
                         'extracted_data': extracted_data,
                         'reasoning_type': 'contextual_auto_resolve'
                     }
+                else:
+                    print(f"❌ [DEBUG] No data extracted from pattern match")
         
+        print(f"🚫 [DEBUG] No intelligent reasoning patterns matched")
         return None
     
     def _extract_plant_id_direct(self, query: str, match, chat_context) -> Optional[Dict]:
@@ -430,6 +619,174 @@ class IntelligentReasoning:
                     }
         
         return None
+
+    # CRM Complaint Status Extractor Methods
+    def _extract_complaint_status(self, query: str, match, chat_context) -> Optional[Dict]:
+        """Extract status value for complaint lookup"""
+        print(f"🔍 [DEBUG] Extracting complaint status from: {query}")
+        status = match.group(1).lower() if match.groups() else None
+        if status:
+            print(f"📊 [DEBUG] Found status: {status}")
+            # Map common status terms to Y/N
+            if status in ['open', 'active', 'ongoing']:
+                return {'status': 'Y'}
+            elif status in ['closed', 'resolved', 'completed', 'done']:
+                return {'status': 'N'}
+        return None
+
+    def _extract_complaint_id_direct(self, query: str, match, chat_context) -> Optional[Dict]:
+        """Extract complaint ID for status lookup"""
+        print(f"🔍 [DEBUG] Extracting complaint ID from: {query}")
+        complaint_id = match.group(1) if match.groups() else None
+        print(f"📊 [DEBUG] Found complaint ID: {complaint_id}")
+        return {'complaint_id': complaint_id} if complaint_id else None
+
+    def _extract_complaint_id_for_pending(self, query: str, match, chat_context) -> Optional[Dict]:
+        """Extract complaint ID for pending/assignee lookup"""
+        print(f"🔍 [DEBUG] Extracting complaint ID for pending lookup from: {query}")
+        complaint_id = match.group(1) if match.groups() else None
+        print(f"📊 [DEBUG] Found complaint ID for pending: {complaint_id}")
+        return {'complaint_id': complaint_id, 'query_type': 'pending_with'} if complaint_id else None
+
+    def _extract_complaint_id_for_workflow(self, query: str, match, chat_context) -> Optional[Dict]:
+        """Extract complaint ID for workflow status lookup"""
+        print(f"🔍 [DEBUG] Extracting complaint ID for workflow lookup from: {query}")
+        complaint_id = match.group(1) if match.groups() else None
+        print(f"📊 [DEBUG] Found complaint ID for workflow: {complaint_id}")
+        return {'complaint_id': complaint_id, 'query_type': 'workflow_status'} if complaint_id else None
+
+    def _extract_assignee_for_complaints(self, query: str, match, chat_context) -> Optional[Dict]:
+        """Extract assignee name for complaint lookup"""
+        print(f"🔍 [DEBUG] Extracting assignee from: {query}")
+        assignee = match.group(1).strip() if match.groups() else None
+        if assignee:
+            print(f"📊 [DEBUG] Found assignee: '{assignee}'")
+            # Normalize assignee names
+            assignee_mapping = {
+                'plant incharge': 'Plant Incharge',
+                'technical manager': 'Technical Manager/Incharge',
+                'technical incharge': 'Technical Manager/Incharge',
+                'ho qc': 'HO QC',
+                'business head': 'Business Head',
+                'technical head': 'Technical Head',
+                'cfo': 'CFO',
+                'md': 'MD'
+            }
+            normalized_assignee = assignee_mapping.get(assignee.lower(), assignee)
+            print(f"📊 [DEBUG] Normalized assignee: '{normalized_assignee}'")
+            return {'assignee': normalized_assignee, 'query_type': 'by_assignee'}
+        return None
+
+    def _extract_complaint_id_for_action_status(self, query: str, match, chat_context) -> Optional[Dict]:
+        """Extract complaint ID for action status lookup"""
+        print(f"🔍 [DEBUG] Extracting complaint ID for action status from: {query}")
+        complaint_id = match.group(1) if match.groups() else None
+        print(f"📊 [DEBUG] Found complaint ID for action status: {complaint_id}")
+        return {'complaint_id': complaint_id, 'query_type': 'action_status'} if complaint_id else None
+
+    def _extract_complaint_and_authority(self, query: str, match, chat_context) -> Optional[Dict]:
+        """Extract complaint ID and authority from action status query"""
+        print(f"🔍 [DEBUG] Extracting complaint and authority from: {query}")
+        complaint_id = match.group(1) if match.groups() else None
+        
+        # Extract authority from query text
+        query_lower = query.lower()
+        authority_mapping = {
+            'ho qc': 'ho_qc_action_status',
+            'business head': 'bh_action_status', 
+            'technical head': 'th_action_status',
+            'cfo': 'cf_action_status',
+            'md': 'md_action_status'
+        }
+        
+        authority_column = None
+        for authority, column in authority_mapping.items():
+            if authority in query_lower:
+                authority_column = column
+                break
+        
+        print(f"📊 [DEBUG] Found complaint ID: {complaint_id}, authority column: {authority_column}")
+        
+        if complaint_id and authority_column:
+            return {
+                'complaint_id': complaint_id,
+                'authority_column': authority_column,
+                'query_type': 'specific_authority_action'
+            }
+        return None
+
+    def _extract_authority_and_action(self, query: str, match, chat_context) -> Optional[Dict]:
+        """Extract authority and action type for complaint lookup"""
+        print(f"🔍 [DEBUG] Extracting authority and action from: {query}")
+        authority = match.group(1).strip() if match.groups() else None
+        
+        # Determine action type from query
+        action_type = None
+        if 'approved' in query.lower():
+            action_type = 'A'
+        elif 'rejected' in query.lower():
+            action_type = 'R'
+        
+        # Map authority to column name
+        authority_mapping = {
+            'ho qc': 'ho_qc_action_status',
+            'business head': 'bh_action_status',
+            'technical head': 'th_action_status', 
+            'cfo': 'cf_action_status',
+            'md': 'md_action_status'
+        }
+        
+        authority_column = authority_mapping.get(authority.lower())
+        
+        print(f"📊 [DEBUG] Found authority: {authority}, column: {authority_column}, action: {action_type}")
+        
+        if authority_column and action_type:
+            return {
+                'authority_column': authority_column,
+                'action_type': action_type,
+                'authority_name': authority,
+                'query_type': 'by_authority_action'
+            }
+        return None
+
+    # Product Correction Extractor Methods
+    def _extract_product_correction_done(self, query: str, match, chat_context) -> Optional[Dict]:
+        """Extract intent for complaints with product correction done (Y)"""
+        print(f"🔍 [DEBUG] Extracting product correction done from: {query}")
+        return {'product_correction_status': 'Y', 'query_type': 'product_correction_done'}
+
+    def _extract_product_correction_not_done(self, query: str, match, chat_context) -> Optional[Dict]:
+        """Extract intent for complaints without product correction (N)"""
+        print(f"🔍 [DEBUG] Extracting product correction not done from: {query}")
+        return {'product_correction_status': 'N', 'query_type': 'product_correction_not_done'}
+
+    def _extract_complaint_id_for_product_correction(self, query: str, match, chat_context) -> Optional[Dict]:
+        """Extract complaint ID for product correction status lookup"""
+        print(f"🔍 [DEBUG] Extracting complaint ID for product correction from: {query}")
+        complaint_id = match.group(1) if match.groups() else None
+        print(f"📊 [DEBUG] Found complaint ID for product correction: {complaint_id}")
+        return {'complaint_id': complaint_id, 'query_type': 'product_correction_status'} if complaint_id else None
+
+    # Category-based Complaint Extractor Methods
+    def _extract_operations_category_count(self, query: str, match, chat_context) -> Optional[Dict]:
+        """Extract intent for counting Operations category complaints"""
+        print(f"🔍 [DEBUG] Extracting operations category count from: {query}")
+        return {'category_id': '1', 'category_name': 'Operations', 'query_type': 'count_by_category'}
+
+    def _extract_technical_category_count(self, query: str, match, chat_context) -> Optional[Dict]:
+        """Extract intent for counting Technical category complaints"""
+        print(f"🔍 [DEBUG] Extracting technical category count from: {query}")
+        return {'category_id': '2', 'category_name': 'Technical', 'query_type': 'count_by_category'}
+
+    def _extract_operations_category(self, query: str, match, chat_context) -> Optional[Dict]:
+        """Extract intent for listing Operations category complaints"""
+        print(f"🔍 [DEBUG] Extracting operations category from: {query}")
+        return {'category_id': '1', 'category_name': 'Operations', 'query_type': 'list_by_category'}
+
+    def _extract_technical_category(self, query: str, match, chat_context) -> Optional[Dict]:
+        """Extract intent for listing Technical category complaints"""
+        print(f"🔍 [DEBUG] Extracting technical category from: {query}")
+        return {'category_id': '2', 'category_name': 'Technical', 'query_type': 'list_by_category'}
     
     def _extract_plant_name_for_id(self, query: str, match, chat_context) -> Optional[Dict]:
         """Extract plant name to find its ID"""
@@ -459,29 +816,368 @@ class IntelligentReasoning:
         """
         intent = reasoning_result['intent']
         extracted_data = reasoning_result['extracted_data']
+        
+        print(f"🔧 [DEBUG] Generating query for intent: {intent}")
+        print(f"📊 [DEBUG] Using extracted data: {extracted_data}")
 
         # Handle complaint status queries
         if intent == 'get_complaints_by_status':
             status = extracted_data.get('status')
             if status:
+                print(f"🎯 [DEBUG] Generating complaints by status query for: {status}")
                 return f"""SELECT COUNT(T1.id_no)
                           FROM public.crm_complaint_dtls AS T1 
                           WHERE T1.active_status ILIKE '{status}'"""
-        if intent == 'get_complaint_status':
+        
+        elif intent == 'get_complaint_status':
             complaint_id = extracted_data.get('complaint_id')
             if complaint_id:
+                print(f"🎯 [DEBUG] Generating complaint status query for ID: {complaint_id}")
                 return f"""
                     SELECT 
                         cd.id_no as complaint_id,
                         cd.complaint_date,
-                        CASE cd.status 
-                            WHEN 'Y' THEN 'Open'
-                            WHEN 'N' THEN 'Closed'
-                            ELSE cd.status
-                        END as status
+                        csv.complaint_status,
+                        cd.complaint_category_id,
+                        CASE 
+                            WHEN csv.complaint_status = 'P' AND cd.complaint_category_id = '1' THEN 'Plant Incharge'
+                            WHEN csv.complaint_status = 'P' AND cd.complaint_category_id = '2' THEN 'Technical Manager/Incharge'
+                            WHEN csv.complaint_status = 'QC' THEN 'HO QC'
+                            WHEN csv.complaint_status = 'BH' THEN 'Business Head'
+                            WHEN csv.complaint_status = 'TH' THEN 'Technical Head'
+                            WHEN csv.complaint_status = 'CF' THEN 'CFO'
+                            WHEN csv.complaint_status = 'MD' THEN 'MD'
+                            WHEN csv.complaint_status = 'C' THEN 'Completed'
+                            ELSE 'Unknown'
+                        END as pending_with,
+                        CASE 
+                            WHEN csv.complaint_status = 'C' THEN 'Closed'
+                            ELSE 'Open'
+                        END as final_status,
+                        CASE 
+                            WHEN cd.complaint_category_id = '1' THEN 'Operations'
+                            WHEN cd.complaint_category_id = '2' THEN 'Technical'
+                            ELSE 'Unknown'
+                        END as category_type
                     FROM crm_complaint_dtls cd
+                    LEFT JOIN crm_site_visit_dtls csv ON cd.id_no = csv.complaint_id
                     WHERE cd.id_no = {complaint_id}
                     LIMIT 1;
+                """
+        
+        elif intent == 'get_complaint_pending_with':
+            complaint_id = extracted_data.get('complaint_id')
+            if complaint_id:
+                print(f"🎯 [DEBUG] Generating pending with query for complaint: {complaint_id}")
+                return f"""
+                    SELECT 
+                        cd.id_no as complaint_id,
+                        cd.complaint_date,
+                        csv.complaint_status,
+                        cd.complaint_category_id,
+                        CASE 
+                            WHEN csv.complaint_status = 'P' AND cd.complaint_category_id = '1' THEN 'Plant Incharge'
+                            WHEN csv.complaint_status = 'P' AND cd.complaint_category_id = '2' THEN 'Technical Manager/Incharge'
+                            WHEN csv.complaint_status = 'QC' THEN 'HO QC'
+                            WHEN csv.complaint_status = 'BH' THEN 'Business Head'
+                            WHEN csv.complaint_status = 'TH' THEN 'Technical Head'
+                            WHEN csv.complaint_status = 'CF' THEN 'CFO'
+                            WHEN csv.complaint_status = 'MD' THEN 'MD'
+                            WHEN csv.complaint_status = 'C' THEN 'Completed'
+                            ELSE 'Unknown'
+                        END as pending_with,
+                        CASE 
+                            WHEN csv.complaint_status = 'C' THEN 'Closed'
+                            ELSE 'Open'
+                        END as final_status,
+                        CASE 
+                            WHEN cd.complaint_category_id = '1' THEN 'Operations'
+                            WHEN cd.complaint_category_id = '2' THEN 'Technical'
+                            ELSE 'Unknown'
+                        END as category_type
+                    FROM crm_complaint_dtls cd
+                    LEFT JOIN crm_site_visit_dtls csv ON cd.id_no = csv.complaint_id
+                    WHERE cd.id_no = {complaint_id}
+                    LIMIT 1;
+                """
+        
+        elif intent == 'get_complaints_by_assignee':
+            assignee = extracted_data.get('assignee')
+            if assignee:
+                print(f"🎯 [DEBUG] Generating complaints by assignee query for: {assignee}")
+                
+                # This is the key logic you mentioned!
+                if assignee == 'Plant Incharge':
+                    return f"""
+                        SELECT 
+                            cd.id_no as complaint_id,
+                            cd.complaint_date,
+                            csv.complaint_status,
+                            cd.complaint_category_id,
+                            'Plant Incharge' as pending_with,
+                            'Operations' as category_type
+                        FROM crm_complaint_dtls cd
+                        LEFT JOIN crm_site_visit_dtls csv ON cd.id_no = csv.complaint_id
+                        WHERE csv.complaint_status = 'P' 
+                          AND cd.complaint_category_id = '1'
+                        ORDER BY cd.complaint_date DESC
+                        LIMIT 50;
+                    """
+                elif assignee == 'Technical Manager/Incharge':
+                    return f"""
+                        SELECT 
+                            cd.id_no as complaint_id,
+                            cd.complaint_date,
+                            csv.complaint_status,
+                            cd.complaint_category_id,
+                            'Technical Manager/Incharge' as pending_with,
+                            'Technical' as category_type
+                        FROM crm_complaint_dtls cd
+                        LEFT JOIN crm_site_visit_dtls csv ON cd.id_no = csv.complaint_id
+                        WHERE csv.complaint_status = 'P' 
+                          AND cd.complaint_category_id = '2'
+                        ORDER BY cd.complaint_date DESC
+                        LIMIT 50;
+                    """
+                else:
+                    # For other assignees (QC, BH, TH, CF, MD)
+                    status_mapping = {
+                        'HO QC': 'QC',
+                        'Business Head': 'BH',
+                        'Technical Head': 'TH',
+                        'CFO': 'CF',
+                        'MD': 'MD'
+                    }
+                    status = status_mapping.get(assignee, assignee)
+                    return f"""
+                        SELECT 
+                            cd.id_no as complaint_id,
+                            cd.complaint_date,
+                            csv.complaint_status,
+                            cd.complaint_category_id,
+                            '{assignee}' as pending_with,
+                            CASE 
+                                WHEN cd.complaint_category_id = '1' THEN 'Operations'
+                                WHEN cd.complaint_category_id = '2' THEN 'Technical'
+                                ELSE 'Unknown'
+                            END as category_type
+                        FROM crm_complaint_dtls cd
+                        LEFT JOIN crm_site_visit_dtls csv ON cd.id_no = csv.complaint_id
+                        WHERE csv.complaint_status = '{status}'
+                        ORDER BY cd.complaint_date DESC
+                        LIMIT 50;
+                    """
+        
+        elif intent == 'get_complaint_workflow_status':
+            complaint_id = extracted_data.get('complaint_id')
+            if complaint_id:
+                print(f"🎯 [DEBUG] Generating workflow status query for complaint: {complaint_id}")
+                return f"""
+                    SELECT 
+                        cd.id_no as complaint_id,
+                        cd.complaint_date,
+                        csv.complaint_status,
+                        cd.complaint_category_id,
+                        csv.ho_qc_action_status,
+                        csv.bh_action_status,
+                        csv.th_action_status,
+                        csv.cf_action_status,
+                        csv.md_action_status,
+                        CASE 
+                            WHEN csv.complaint_status = 'P' AND cd.complaint_category_id = '1' THEN 'Plant Incharge'
+                            WHEN csv.complaint_status = 'P' AND cd.complaint_category_id = '2' THEN 'Technical Manager/Incharge'
+                            WHEN csv.complaint_status = 'QC' THEN 'HO QC'
+                            WHEN csv.complaint_status = 'BH' THEN 'Business Head'
+                            WHEN csv.complaint_status = 'TH' THEN 'Technical Head'
+                            WHEN csv.complaint_status = 'CF' THEN 'CFO'
+                            WHEN csv.complaint_status = 'MD' THEN 'MD'
+                            WHEN csv.complaint_status = 'C' THEN 'Completed'
+                            ELSE 'Unknown'
+                        END as current_stage,
+                        CASE 
+                            WHEN cd.complaint_category_id = '1' THEN 'Operations'
+                            WHEN cd.complaint_category_id = '2' THEN 'Technical'
+                            ELSE 'Unknown'
+                        END as category_type
+                    FROM crm_complaint_dtls cd
+                    LEFT JOIN crm_site_visit_dtls csv ON cd.id_no = csv.complaint_id
+                    WHERE cd.id_no = {complaint_id}
+                    LIMIT 1;
+                """
+        
+        elif intent == 'get_specific_action_status':
+            complaint_id = extracted_data.get('complaint_id')
+            authority_column = extracted_data.get('authority_column')
+            if complaint_id and authority_column:
+                print(f"🎯 [DEBUG] Generating specific action status query for complaint {complaint_id}, authority: {authority_column}")
+                return f"""
+                    SELECT 
+                        cd.id_no as complaint_id,
+                        cd.complaint_date,
+                        csv.{authority_column},
+                        CASE csv.{authority_column}
+                            WHEN 'A' THEN 'Approved'
+                            WHEN 'R' THEN 'Rejected'
+                            ELSE 'Pending'
+                        END as action_status_description
+                    FROM crm_complaint_dtls cd
+                    LEFT JOIN crm_site_visit_dtls csv ON cd.id_no = csv.complaint_id
+                    WHERE cd.id_no = {complaint_id}
+                    LIMIT 1;
+                """
+        
+        elif intent == 'get_complaints_by_action_status':
+            authority_column = extracted_data.get('authority_column')
+            action_type = extracted_data.get('action_type')
+            authority_name = extracted_data.get('authority_name')
+            if authority_column and action_type:
+                print(f"🎯 [DEBUG] Generating complaints by action status query for {authority_name}: {action_type}")
+                return f"""
+                    SELECT 
+                        cd.id_no as complaint_id,
+                        cd.complaint_date,
+                        csv.{authority_column},
+                        CASE csv.{authority_column}
+                            WHEN 'A' THEN 'Approved'
+                            WHEN 'R' THEN 'Rejected'
+                            ELSE 'Pending'
+                        END as action_status_description,
+                        '{authority_name}' as authority
+                    FROM crm_complaint_dtls cd
+                    LEFT JOIN crm_site_visit_dtls csv ON cd.id_no = csv.complaint_id
+                    WHERE csv.{authority_column} = '{action_type}'
+                    ORDER BY cd.complaint_date DESC
+                    LIMIT 50;
+                """
+        
+        # Product Correction Status Queries
+        elif intent == 'get_complaints_with_product_correction_done':
+            print(f"🎯 [DEBUG] Generating complaints with product correction done query")
+            return f"""
+                SELECT 
+                    cd.id_no as complaint_id,
+                    cd.complaint_date,
+                    csv.product_correction,
+                    csv.complaint_status,
+                    cd.complaint_category_id,
+                    CASE 
+                        WHEN cd.complaint_category_id = '1' THEN 'Operations'
+                        WHEN cd.complaint_category_id = '2' THEN 'Technical'
+                        ELSE 'Unknown'
+                    END as category_type,
+                    'Product Correction Done' as correction_status
+                FROM crm_complaint_dtls cd
+                LEFT JOIN crm_site_visit_dtls csv ON cd.id_no = csv.complaint_id
+                WHERE csv.product_correction = 'Y'
+                ORDER BY cd.complaint_date DESC
+                LIMIT 50;
+            """
+        
+        elif intent == 'get_complaints_without_product_correction':
+            print(f"🎯 [DEBUG] Generating complaints without product correction query")
+            return f"""
+                SELECT 
+                    cd.id_no as complaint_id,
+                    cd.complaint_date,
+                    csv.product_correction,
+                    csv.complaint_status,
+                    cd.complaint_category_id,
+                    CASE 
+                        WHEN cd.complaint_category_id = '1' THEN 'Operations'
+                        WHEN cd.complaint_category_id = '2' THEN 'Technical'
+                        ELSE 'Unknown'
+                    END as category_type,
+                    CASE 
+                        WHEN csv.product_correction = 'N' THEN 'Product Correction Not Done'
+                        WHEN csv.product_correction IS NULL OR csv.product_correction = '' THEN 'No Correction Status'
+                        ELSE 'Unknown Status'
+                    END as correction_status
+                FROM crm_complaint_dtls cd
+                LEFT JOIN crm_site_visit_dtls csv ON cd.id_no = csv.complaint_id
+                WHERE csv.product_correction = 'N' 
+                   OR csv.product_correction IS NULL 
+                   OR csv.product_correction = ''
+                ORDER BY cd.complaint_date DESC
+                LIMIT 50;
+            """
+        
+        elif intent == 'get_complaint_product_correction_status':
+            complaint_id = extracted_data.get('complaint_id')
+            if complaint_id:
+                print(f"🎯 [DEBUG] Generating product correction status query for complaint: {complaint_id}")
+                return f"""
+                    SELECT 
+                        cd.id_no as complaint_id,
+                        cd.complaint_date,
+                        csv.product_correction,
+                        csv.complaint_status,
+                        cd.complaint_category_id,
+                        CASE 
+                            WHEN csv.product_correction = 'Y' THEN 'Product Correction Done'
+                            WHEN csv.product_correction = 'N' THEN 'Product Correction Not Done'
+                            WHEN csv.product_correction IS NULL OR csv.product_correction = '' THEN 'No Correction Status Recorded'
+                            ELSE 'Unknown Status'
+                        END as correction_status_description,
+                        CASE 
+                            WHEN cd.complaint_category_id = '1' THEN 'Operations'
+                            WHEN cd.complaint_category_id = '2' THEN 'Technical'
+                            ELSE 'Unknown'
+                        END as category_type
+                    FROM crm_complaint_dtls cd
+                    LEFT JOIN crm_site_visit_dtls csv ON cd.id_no = csv.complaint_id
+                    WHERE cd.id_no = {complaint_id}
+                    LIMIT 1;
+                """
+        
+        # Category-based complaint queries
+        elif intent == 'get_complaints_count_by_category':
+            category_id = extracted_data.get('category_id')
+            category_name = extracted_data.get('category_name')
+            if category_id and category_name:
+                print(f"🎯 [DEBUG] Generating complaints count by category query for: {category_name} (ID: {category_id})")
+                return f"""
+                    SELECT COUNT(cd.id_no) as complaint_count,
+                           '{category_name}' as category_name,
+                           '{category_id}' as category_id
+                    FROM crm_complaint_dtls cd
+                    WHERE cd.complaint_category_id = '{category_id}'
+                    AND cd.active_status = 'Y';
+                """
+        
+        elif intent == 'get_complaints_by_category':
+            category_id = extracted_data.get('category_id')
+            category_name = extracted_data.get('category_name')
+            if category_id and category_name:
+                print(f"🎯 [DEBUG] Generating complaints by category query for: {category_name} (ID: {category_id})")
+                return f"""
+                    SELECT 
+                        cd.id_no as complaint_id,
+                        cd.complaint_date,
+                        cd.complaint_subject,
+                        csv.complaint_status,
+                        cd.complaint_category_id,
+                        '{category_name}' as category_name,
+                        CASE 
+                            WHEN csv.complaint_status = 'P' AND cd.complaint_category_id = '1' THEN 'Plant Incharge'
+                            WHEN csv.complaint_status = 'P' AND cd.complaint_category_id = '2' THEN 'Technical Manager/Incharge'
+                            WHEN csv.complaint_status = 'QC' THEN 'HO QC'
+                            WHEN csv.complaint_status = 'BH' THEN 'Business Head'
+                            WHEN csv.complaint_status = 'TH' THEN 'Technical Head'
+                            WHEN csv.complaint_status = 'CF' THEN 'CFO'
+                            WHEN csv.complaint_status = 'MD' THEN 'MD'
+                            WHEN csv.complaint_status = 'C' THEN 'Completed'
+                            ELSE 'Unknown'
+                        END as pending_with,
+                        CASE 
+                            WHEN csv.complaint_status = 'C' THEN 'Closed'
+                            ELSE 'Open'
+                        END as final_status
+                    FROM crm_complaint_dtls cd
+                    LEFT JOIN crm_site_visit_dtls csv ON cd.id_no = csv.complaint_id
+                    WHERE cd.complaint_category_id = '{category_id}'
+                    AND cd.active_status = 'Y'
+                    ORDER BY cd.complaint_date DESC
+                    LIMIT 50;
                 """
         
         # Check for hierarchical queries first
@@ -525,6 +1221,7 @@ class IntelligentReasoning:
                           WHERE customer_id = {customer_id} 
                           LIMIT 1;"""
         
+        print(f"❌ [DEBUG] No query generation logic found for intent: {intent}")
         return None
     
     def create_intelligent_response(self, reasoning_result: Dict, query_result: Dict) -> str:
@@ -534,6 +1231,10 @@ class IntelligentReasoning:
         extracted_data = reasoning_result['extracted_data']
         intent = reasoning_result['intent']
         source = extracted_data.get('source', 'unknown')
+        
+        print(f"💬 [DEBUG] Creating response for intent: {intent}")
+        print(f"📊 [DEBUG] Query result type: {type(query_result)}")
+        print(f"📝 [DEBUG] Query result keys: {query_result.keys() if isinstance(query_result, dict) else 'N/A'}")
 
         # Handle complaint status count responses
         if intent == 'get_complaints_by_status':
@@ -547,9 +1248,91 @@ class IntelligentReasoning:
         if intent == 'get_complaint_status':
             complaint_id = extracted_data.get('complaint_id')
             if query_result.get('sql') and 'rows' in query_result and query_result['rows']:
-                status = query_result['rows'][0].get('status', 'Unknown')
-                return f"The status of complaint ID {complaint_id} is: {status}"
+                row = query_result['rows'][0]
+                pending_with = row.get('pending_with', 'Unknown')
+                final_status = row.get('final_status', 'Unknown')
+                return f"Complaint ID {complaint_id} is currently with: {pending_with} (Status: {final_status})"
             return f"Checking status for complaint ID {complaint_id}..."
+        
+        # Handle pending with responses
+        if intent == 'get_complaint_pending_with':
+            complaint_id = extracted_data.get('complaint_id')
+            if query_result.get('sql') and 'rows' in query_result and query_result['rows']:
+                row = query_result['rows'][0]
+                pending_with = row.get('pending_with', 'Unknown')
+                return f"Complaint ID {complaint_id} is currently pending with: {pending_with}"
+            return f"Checking who is handling complaint ID {complaint_id}..."
+        
+        # Handle complaints by assignee responses
+        if intent == 'get_complaints_by_assignee':
+            assignee = extracted_data.get('assignee')
+            if query_result.get('sql') and 'rows' in query_result and query_result['rows']:
+                count = len(query_result['rows'])
+                return f"Found {count} complaints currently assigned to {assignee}."
+            return f"Searching for complaints assigned to {assignee}..."
+        
+        # Handle workflow status responses
+        if intent == 'get_complaint_workflow_status':
+            complaint_id = extracted_data.get('complaint_id')
+            if query_result.get('sql') and 'rows' in query_result and query_result['rows']:
+                row = query_result['rows'][0]
+                current_stage = row.get('current_stage', 'Unknown')
+                return f"Complaint ID {complaint_id} is currently at stage: {current_stage}"
+            return f"Checking workflow status for complaint ID {complaint_id}..."
+        
+        # Handle specific action status responses
+        if intent == 'get_specific_action_status':
+            complaint_id = extracted_data.get('complaint_id')
+            if query_result.get('sql') and 'rows' in query_result and query_result['rows']:
+                row = query_result['rows'][0]
+                action_status = row.get('action_status_description', 'Unknown')
+                return f"The action status for complaint ID {complaint_id} is: {action_status}"
+            return f"Checking specific action status for complaint ID {complaint_id}..."
+        
+        # Handle complaints by action status responses
+        if intent == 'get_complaints_by_action_status':
+            authority_name = extracted_data.get('authority_name')
+            action_type = 'approved' if extracted_data.get('action_type') == 'A' else 'rejected'
+            if query_result.get('sql') and 'rows' in query_result and query_result['rows']:
+                count = len(query_result['rows'])
+                return f"Found {count} complaints {action_type} by {authority_name}."
+            return f"Searching for complaints {action_type} by {authority_name}..."
+        
+        # Product Correction response templates
+        if intent == 'get_complaints_with_product_correction_done':
+            if query_result.get('sql') and 'rows' in query_result and query_result['rows']:
+                count = len(query_result['rows'])
+                return f"Found {count} complaints where product correction has been done."
+            return "Searching for complaints with product correction completed..."
+        
+        if intent == 'get_complaints_without_product_correction':
+            if query_result.get('sql') and 'rows' in query_result and query_result['rows']:
+                count = len(query_result['rows'])
+                return f"Found {count} complaints where product correction is not done or status is missing."
+            return "Searching for complaints without product correction..."
+        
+        if intent == 'get_complaint_product_correction_status':
+            complaint_id = extracted_data.get('complaint_id')
+            if query_result.get('sql') and 'rows' in query_result and query_result['rows']:
+                row = query_result['rows'][0]
+                correction_status = row.get('correction_status_description', 'Unknown')
+                return f"Product correction status for complaint ID {complaint_id}: {correction_status}"
+            return f"Checking product correction status for complaint ID {complaint_id}..."
+        
+        # Category-based complaint response templates
+        if intent == 'get_complaints_count_by_category':
+            category_name = extracted_data.get('category_name')
+            if query_result.get('sql') and 'rows' in query_result and query_result['rows']:
+                count = query_result['rows'][0].get('complaint_count', 0)
+                return f"Found {count} complaints in {category_name} category."
+            return f"Counting complaints in {category_name} category..."
+        
+        if intent == 'get_complaints_by_category':
+            category_name = extracted_data.get('category_name')
+            if query_result.get('sql') and 'rows' in query_result and query_result['rows']:
+                count = len(query_result['rows'])
+                return f"Found {count} complaints in {category_name} category."
+            return f"Listing complaints in {category_name} category..."
         
         # Hierarchical response templates
         if intent.startswith(('get_zone_', 'get_region_', 'get_plant_', 'get_vehicles_', 'get_vehicle_hierarchy')):

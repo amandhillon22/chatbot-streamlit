@@ -250,7 +250,8 @@ class DatabaseReferenceParser:
             'crm_site_visit_dtls': [
                 "Site visit records for complaint resolution",
                 "Tracks resolution attempts and outcomes",
-                "Links complaints to on-site actions"
+                "Links complaints to on-site actions",
+                "CRITICAL: product_correction column uses exact values 'Y' for done (not 'Yes') and 'N' for not done (not 'No')"
             ],
             'customer_ship_details': [
                 "Customer shipping and delivery management",
@@ -526,6 +527,9 @@ class DatabaseReferenceParser:
                 hints.append(f"Consider date filtering for {table}")
             elif 'crm_complaint_dtls' in table.lower():
                 hints.append(f"For complaint status filters, active_status must be compared with exact value 'Y' (not 'Open') or 'N' (not 'Closed')")
+            elif 'crm_site_visit_dtls' in table.lower():
+                hints.append(f"For product correction filters, product_correction must use exact value 'Y' (not 'Yes') for done or 'N' (not 'No') for not done")
+                hints.append(f"For action status filters (*_action_status columns like bh_action_status, cm_action_status), use 'A' for Approved/Active or 'R' for Rejected/Refused (NEVER use 'Y'/'N')")
         
         return hints
     

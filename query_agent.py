@@ -66,10 +66,19 @@ except ImportError as e:
     print(f"⚠️ Intelligent reasoning not available: {e}")
     intelligent_reasoning = None
 
+# Import enhanced pronoun resolver
+try:
+    from enhanced_pronoun_resolver import EnhancedPronounResolver
+    pronoun_resolver = EnhancedPronounResolver()
+    print("✅ Enhanced pronoun resolver initialized")
+except ImportError as e:
+    print(f"⚠️ Enhanced pronoun resolver not available: {e}")
+    pronoun_resolver = None
+
 load_dotenv()
 
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-model = genai.GenerativeModel("gemini-2.5-pro")
+model = genai.GenerativeModel("gemini-2.5-flash")
 
 def schema_dict_to_prompt(schema_dict):
     """
@@ -135,6 +144,35 @@ def extract_json(response):
         return {}
 
 def english_to_sql(prompt, chat_context=None):
+    # 🎯 ENHANCED PRONOUN RESOLUTION CHECK
+    if pronoun_resolver and chat_context:
+        pronoun_detection = pronoun_resolver.detect_pronoun_reference(prompt)
+        
+        if pronoun_detection['needs_context_resolution']:
+            print(f"🎯 Pronoun reference detected: {pronoun_detection['pronoun_type']}")
+            
+            # Check if we should avoid asking for clarification
+            should_avoid_clarification = pronoun_resolver.should_avoid_clarification(prompt, chat_context)
+            
+            if should_avoid_clarification:
+                print("🚫 Avoiding clarification - resolving with context")
+                
+                # Resolve using context
+                context_resolution = pronoun_resolver.resolve_context_reference(
+                    prompt, chat_context, pronoun_detection
+                )
+                
+                if context_resolution:
+                    return {
+                        "sql": context_resolution['sql'],
+                        "response": f"Here are the {context_resolution['requested_field']} for the {context_resolution['entity_type']} from our previous results:",
+                        "follow_up": f"Would you like to see any other information about these {context_resolution['entity_type']}?",
+                        "context_resolution_applied": True,
+                        "reasoning": context_resolution['reasoning']
+                    }
+                else:
+                    print("❌ Context resolution failed, continuing with normal processing")
+    
     # 🧠 INTELLIGENT CONTEXTUAL REASONING CHECK
     if intelligent_reasoning and chat_context:
         reasoning_result = intelligent_reasoning.analyze_query_intent(prompt, chat_context)
@@ -522,7 +560,51 @@ You are an intelligent SQL assistant for multiple PostgreSQL schemas with advanc
 - **zone_master**: ZONES (larger geographic areas) - Use `zm.zone_name` for zone names
 - **vehicle_master**: VEHICLES/TRUCKS/FLEET - Use `vm.reg_no` for vehicle registration
 
-📋 **QUERY INTERPRETATION RULES:**
+⚠️ **CRITICAL COLUMN VALUE MAPPINGS - EXACT VALUES REQUIRED:**
+
+🚨 **MOST CRITICAL**: For status and correction columns, use **EXACT** database values:
+- **active_status**: Use 'Y' for Open/Active complaints, 'N' for Closed (NEVER use 'Open'/'Closed')
+- **product_correction**: Use 'Y' for Done/Completed correction, 'N' for Not Done (NEVER use 'Yes'/'No'/'Completed')
+- **_action_status columns** (bh_action_status, cm_action_status, etc.): Use 'A' for Approved/Accepted, 'R' for Rejected/Refused/Declined (NEVER use 'Y'/'N')
+
+**EXAMPLES OF CORRECT USAGE:**
+- ✅ `WHERE active_status = 'Y'` (for open complaints)
+- ✅ `WHERE product_correction = 'Y'` (for completed corrections)
+- ✅ `WHERE bh_action_status = 'A'` (for approved actions)
+- ✅ `WHERE cm_action_status = 'R'` (for rejected actions)
+- ❌ `WHERE active_status = 'Open'` (WRONG!)
+- ❌ `WHERE product_correction = 'Yes'` (WRONG!)
+- ❌ `WHERE bh_action_status = 'Y'` (WRONG! Use 'A' instead)
+
+� **CRITICAL COLUMN VALIDATION - EXACT COLUMN NAMES REQUIRED:**
+
+**FOR CRM COMPLAINT TABLES**: Only use columns that ACTUALLY exist in the schema:
+- **crm_complaint_dtls**: Use ONLY columns explicitly listed in schema (check id_no, complaint_date, complaint_category_id, active_status, cust_id, plant_id)
+- **crm_site_visit_dtls**: Use ONLY columns explicitly listed in schema (check complaint_id, complaint_status, product_correction, bh_action_status, ho_qc_action_status, etc.)
+- **NEVER assume columns exist** - always verify against the provided schema
+
+**COMMON WRONG ASSUMPTIONS TO AVOID:**
+- ❌ `description` (This column may NOT exist in crm_complaint_dtls)
+- ❌ `title` (This column may NOT exist in crm_complaint_dtls)  
+- ❌ `details` (This column may NOT exist in crm_complaint_dtls)
+- ❌ `summary` (This column may NOT exist in crm_complaint_dtls)
+- ❌ `complaint_description` (This column may NOT exist in crm_complaint_dtls)
+
+**CORRECT APPROACH FOR COMPLAINT DETAILS:**
+- ✅ ALWAYS check the provided schema for exact column names
+- ✅ Use: `id_no, complaint_date, complaint_category_id, active_status` (if they exist in schema)
+- ✅ Join with crm_site_visit_dtls for: complaint_status, product_correction, action statuses
+- ✅ Join with hosp_master for plant names using plant_id relationship
+- ✅ Join with crm_customer_dtls for customer information using cust_id relationship
+- ✅ If needed columns don't exist, explain limitation to user
+
+**EXAMPLES OF CORRECT COLUMN VALIDATION:**
+- ✅ `SELECT cd.id_no, cd.complaint_date FROM crm_complaint_dtls cd` (verify columns exist in schema)
+- ✅ `WHERE csv.ho_qc_action_status = 'R'` (for rejected by HO QC - verify column exists)
+- ✅ `WHERE cd.active_status = 'Y'` (for active complaints - verify column exists)
+- ❌ `SELECT cd.description FROM crm_complaint_dtls cd` (WRONG! Verify column exists first)
+
+�📋 **QUERY INTERPRETATION RULES:**
 - "Show plants" → SELECT FROM hosp_master (NOT medical facilities!)
 - "Vehicles in Mohali" → JOIN vehicle_master with hosp_master WHERE plant name ILIKE '%Mohali%'
 - "Plants in Punjab" → JOIN hosp_master with district_master WHERE region name ILIKE '%Punjab%'
@@ -615,10 +697,17 @@ If the user asks a question that appears to follow from a previous result, list,
 
 - **STEP 1**: Before writing any SQL, carefully examine the provided schema.
 - **STEP 2**: For each table you want to query, verify the exact column names AND DATA TYPES listed.
-- **STEP 3**: **CRITICAL: NEVER use SUM() or AVG() on TEXT columns** (marked as TEXT in schema).
-- **STEP 4**: Only use SUM() or AVG() on NUMERIC columns (marked as NUMERIC in schema).
-- **STEP 5**: If you need to join tables, ensure the join columns exist in BOTH tables.
-- **STEP 6**: If a user asks for data that requires non-existent columns, explain the limitation.
+- **STEP 3**: **CRITICAL: NEVER assume column names exist** - only use columns explicitly listed in the schema.
+- **STEP 4**: **CRITICAL: NEVER use SUM() or AVG() on TEXT columns** (marked as TEXT in schema).
+- **STEP 5**: Only use SUM() or AVG() on NUMERIC columns (marked as NUMERIC in schema).
+- **STEP 6**: If you need to join tables, ensure the join columns exist in BOTH tables.
+- **STEP 7**: If a user asks for data that requires non-existent columns, explain the limitation and suggest available columns.
+
+**Critical Column Existence Check:**
+- **BEFORE generating SQL**: Verify EVERY column exists in the provided schema
+- **IF column not found**: Return error explaining which columns ARE available
+- **COMMON MISTAKES**: Assuming 'description', 'title', 'details' columns exist without checking schema
+- **CORRECT APPROACH**: Only reference columns explicitly listed in schema for each table
 
 **Data Type Rules:**
 - **TEXT columns** (character varying, text, character): 
@@ -640,6 +729,16 @@ If the user asks a question that appears to follow from a previous result, list,
   "sql": null,
   "response": "I cannot calculate the total quantity because the 'quantity' column contains text data, not numbers. I can show you the count of records or individual quantity values instead.",
   "follow_up": "Would you like to see the count of SO details records or view individual quantity values?"
+}}
+```
+
+**Example**: If user asks for complaint details but references non-existent columns, respond with:
+```json
+{{
+  "schema": null,
+  "sql": null,
+  "response": "I cannot retrieve the 'description' column because it doesn't exist in the crm_complaint_dtls table. Available columns include: id_no, complaint_date, complaint_category_id, active_status, cust_id, plant_id. Would you like me to show these details instead?",
+  "follow_up": "Which of the available complaint details would you like to see?"
 }}
 ```
 

@@ -28,7 +28,7 @@ except ImportError as e:
 load_dotenv()
 
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-model = genai.GenerativeModel("gemini-2.5-pro")
+model = genai.GenerativeModel("gemini-2.5-flash")
 
 def schema_dict_to_prompt(schema_dict):
     """
@@ -54,6 +54,15 @@ if EMBEDDINGS_AVAILABLE:
         print(f"⚠️ Failed to initialize sentence transformer embeddings: {e}")
         EMBEDDINGS_AVAILABLE = False
 
+# Import enhanced pronoun resolver
+try:
+    from enhanced_pronoun_resolver import EnhancedPronounResolver
+    pronoun_resolver = EnhancedPronounResolver()
+    print("✅ Enhanced pronoun resolver initialized")
+except ImportError as e:
+    print(f"⚠️ Enhanced pronoun resolver not available: {e}")
+    pronoun_resolver = None
+
 def extract_json(response):
     try:
         match = re.search(r"{[\s\S]+}", response)
@@ -64,6 +73,35 @@ def extract_json(response):
         return {}
 
 def english_to_sql(prompt, chat_context=None):
+    # 🎯 ENHANCED PRONOUN RESOLUTION CHECK
+    if pronoun_resolver and chat_context:
+        pronoun_detection = pronoun_resolver.detect_pronoun_reference(prompt)
+        
+        if pronoun_detection['needs_context_resolution']:
+            print(f"🎯 Pronoun reference detected: {pronoun_detection['pronoun_type']}")
+            
+            # Check if we should avoid asking for clarification
+            should_avoid_clarification = pronoun_resolver.should_avoid_clarification(prompt, chat_context)
+            
+            if should_avoid_clarification:
+                print("🚫 Avoiding clarification - resolving with context")
+                
+                # Resolve using context
+                context_resolution = pronoun_resolver.resolve_context_reference(
+                    prompt, chat_context, pronoun_detection
+                )
+                
+                if context_resolution:
+                    return {
+                        "sql": context_resolution['sql'],
+                        "response": f"Here are the {context_resolution['requested_field']} for the {context_resolution['entity_type']} from our previous results:",
+                        "follow_up": f"Would you like to see any other information about these {context_resolution['entity_type']}?",
+                        "context_resolution_applied": True,
+                        "reasoning": context_resolution['reasoning']
+                    }
+                else:
+                    print("❌ Context resolution failed, continuing with normal processing")
+    
     if re.search(r'\b(format|clean|style|tabular|bullets|rewrite|shorter|rephrase|reword|simplify|again|visual|text-based|in text|as table|re-display)\b', prompt, re.IGNORECASE):
         last_data = chat_context.last_result if chat_context else None
         if not last_data:
@@ -503,4 +541,5 @@ class ChatContext:
         self.last_result = None
         self.last_result_summary = None
         self.last_result_entities = None
+        self.last_displayed_items = None
         self.history = []
