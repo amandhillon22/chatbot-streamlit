@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eon Inteligence</title>
+    <link href="https://fonts.googleapis.com/css2?family=Segoe+UI:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Login Page -->
+    <div class="login-container" id="loginContainer">
+        <h1>Welcome!</h1>
+        <form class="login-form" id="loginForm">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <button type="submit" class="login-btn" id="loginBtn">
+                <span>Login</span>
+            </button>
+        </form>
+    </div>
+
+    <!-- Main Container -->
+    <div class="container hidden" id="mainContainer">
+        <!-- Sidebar -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="chat-logo">
+                        <i class="fa-solid fa-robot"></i>
+                        <span>Eon Intelisense</span>
+                    </div>
+                <button class="sidebar-toggle" id="sidebarToggle">
+                    <i class="fas fa-bars"></i>
+                </button>
+            </div>
+
+            <div class="sidebar-content">
+                <button class="new-chat-btn" id="newChatBtnSidebar">
+                    <i class="fas fa-plus"></i>
+                    <span>New Chat</span>
+                </button>
+
+                <div class="chat-sessions-section">
+                    <div class="section-header">
+                        <h3>Recent Chats</h3>
+                    </div>
+                    <div class="chat-sessions" id="chatSessions">
+                        <!-- Chat sessions will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar-footer">
+                <div class="user-info" id="userInfo">
+                    <div class="user-avatar">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <div class="user-details">
+                        <div class="user-name" id="userName">Admin</div>
+                        <div class="user-status">Online</div>
+                    </div>
+                </div>
+                <button class="logout-btn" id="logoutBtn">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span>Logout</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Copilot-style centered welcome screen -->
+            <div class="copilot-welcome" id="copilotWelcome">
+                <div class="copilot-header">
+                    <div class="copilot-logo">
+                        <div class="logo-icon">
+                            <i class="fa-solid fa-robot"></i>
+                        </div>
+                        <h1 class="logo-text">Eon Intelisense</h1>
+                    </div>
+                </div>
+                
+                <div class="copilot-center">
+                    <div class="welcome-content">
+                        <div class="gradient-icon">
+                            <i class="fas fa-database"></i>
+                        </div>
+                        <h2 class="main-title">What can I help with?</h2>
+                        <p class="main-subtitle">Ask me anything about your database and I'll help you find the answers</p>
+                    </div>
+                    
+                    <!-- Centered input field -->
+                    <div class="center-input-container">
+                        <div class="center-input-wrapper">
+                            <textarea class="center-input-field" id="centerInputField" placeholder="Ask me anything about your database..." rows="1"></textarea>
+                            <button class="center-send-btn" id="centerSendBtn" disabled>
+                                <i class="fas fa-arrow-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Quick suggestions -->
+                    <div class="quick-suggestions">
+                        <div class="suggestion-item" data-text="Show me vehicle information">
+                            <i class="fas fa-truck"></i>
+                            <span>Show vehicle data</span>
+                        </div>
+                        <div class="suggestion-item" data-text="Get fuel consumption report">
+                            <i class="fas fa-gas-pump"></i>
+                            <span>Fuel reports</span>
+                        </div>
+                        <div class="suggestion-item" data-text="Show SO details summary">
+                            <i class="fas fa-chart-bar"></i>
+                            <span>SO analytics</span>
+                        </div>
+                        <div class="suggestion-item" data-text="Driver performance data">
+                            <i class="fas fa-users"></i>
+                            <span>Driver insights</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat interface (hidden initially) -->
+            <div class="chat-interface hidden" id="chatInterface">
+                <!-- <div class="chat-header">
+                    <div class="chat-logo">
+                        <i class="fa-solid fa-robot"></i>
+                        <span>Eon Intelisense</span>
+                    </div>
+                    <button class="new-chat-btn" id="newChatBtn">
+                        <i class="fas fa-plus"></i>
+                        <span>New chat</span>
+                    </button>
+                </div> -->
+                
+                <div class="chat-messages" id="chatMessages">
+                    <!-- Chat messages will be populated here -->
+                </div>
+                
+                <div class="chat-input-area">
+                    <div class="chat-input-container">
+                        <div class="chat-input-wrapper">
+                            <textarea class="chat-input-field" id="chatInputField" placeholder="Ask a follow-up question..." rows="1"></textarea>
+                            <button class="chat-send-btn" id="chatSendBtn" disabled>
+                                <i class="fas fa-arrow-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="notification" id="notification">
+        <span id="notificationText"></span>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

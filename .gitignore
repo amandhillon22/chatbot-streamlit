@@ -79,3 +79,19 @@ Thumbs.db
 # PostgreSQL dumps
 *.sql
 *.dump
+
+# Additional project-specific ignores
+chatbot_env/
+temp/
+tmp/
+*.tmp
+.cache/
+performance.log
+app.log
+flask.log
+server.log
+
+# IDE files
+*.swp
+*.swo
+*~
