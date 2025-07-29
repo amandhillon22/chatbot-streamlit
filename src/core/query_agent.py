@@ -457,6 +457,8 @@ CRITICAL: For distance_report queries, you MUST apply mandatory conversion formu
 MANDATORY QUERY RULES:
 - ALWAYS add "LIMIT 50" to every SELECT query to prevent performance issues
 - Use descriptive column aliases for user-friendly display (e.g., "reg_no as registration_number", "name as plant_name")
+- CRITICAL: Format ALL datetime/timestamp columns using TO_CHAR() for user-friendly display (e.g., TO_CHAR(from_tm, 'DD Mon YYYY HH24:MI') as start_time)
+- NEVER return raw ISO datetime formats - always apply user-friendly formatting
 - Never exceed 50 rows in any single query result
 
 Context:
@@ -1068,6 +1070,70 @@ This approach ensures queries work regardless of spacing, case, or minor formatt
 
 {hierarchy_guidance}
 
+🕐 **CRITICAL: USER-FRIENDLY DATE FORMATTING - AI-FIRST APPROACH:**
+
+⚠️ **MANDATORY DATE FORMATTING RULES FOR ALL QUERIES:**
+
+1. **AUTOMATIC DATE FORMATTING (REQUIRED FOR ALL DATETIME COLUMNS):**
+   - **NEVER return raw ISO date formats** (e.g., "2025-07-12 19:53:05")
+   - **ALWAYS format dates to be user-friendly** using PostgreSQL TO_CHAR function
+   - **Apply to ALL timestamp, date, and datetime columns automatically**
+
+2. **STANDARD DATE FORMAT PATTERNS:**
+   - **Primary format (Date with Time)**: `TO_CHAR(column_name, 'DD Mon YYYY HH24:MI') as formatted_column_name` (e.g., "12 Jul 2025 19:53")
+   - **Date Only**: `TO_CHAR(column_name, 'DD Mon YYYY') as formatted_column_name` (e.g., "12 Jul 2025")
+   - **Alternative format**: `TO_CHAR(column_name, 'DD-MM-YYYY HH24:MI:SS') as formatted_column_name` (if seconds needed)
+
+3. **EXAMPLES OF CORRECT DATE FORMATTING:**
+   ```sql
+   -- Speed violation query with formatted date
+   SELECT vm.reg_no as registration_number,
+          vr.max_speed as maximum_speed_kmh,
+          TO_CHAR(vr.from_tm, 'DD Mon YYYY HH24:MI') as violation_start_time
+   FROM public.violate_report_65 vr
+   JOIN public.vehicle_master vm ON vr.id_vehicle = vm.id_no
+   
+   -- Distance report with formatted dates
+   SELECT reg_no as registration_number,
+          TO_CHAR(from_tm, 'DD Mon YYYY HH24:MI') as journey_start,
+          TO_CHAR(to_tm, 'DD Mon YYYY HH24:MI') as journey_end,
+          ROUND(distance / 1000.0, 2) as distance_km
+   FROM public.distance_report
+   
+   -- Complaint report with formatted dates
+   SELECT id_no as complaint_id,
+          TO_CHAR(complaint_date, 'DD Mon YYYY') as complaint_date_formatted
+   FROM public.crm_complaint_dtls
+   ```
+
+4. **COMPREHENSIVE DATE COLUMN IDENTIFICATION:**
+   - **Timestamp columns**: from_tm, to_tm, date_time, created_at, updated_at
+   - **Date columns**: complaint_date, visit_date, report_date
+   - **Datetime columns**: Any column with timestamp, datetime, or date data type
+   - **Apply formatting to ALL such columns automatically**
+
+5. **DATE FORMAT PREFERENCES:**
+   - **Primary format**: DD Mon YYYY HH24:MI (e.g., "12 Jul 2025 19:53")
+   - **Date only**: DD Mon YYYY (e.g., "12 Jul 2025")
+   - **With seconds**: DD Mon YYYY HH24:MI:SS (e.g., "12 Jul 2025 19:53:05")
+   - **Choose appropriate format based on column type and user query context**
+
+6. **CRITICAL IMPLEMENTATION RULES:**
+   - **IDENTIFY every datetime column in your query**
+   - **WRAP each datetime column with TO_CHAR() function**
+   - **USE descriptive aliases** (e.g., violation_start_time, journey_start)
+   - **NEVER leave raw datetime columns unformatted**
+   - **APPLY this to ALL queries, not just specific ones**
+
+⚠️ **THIS APPLIES TO ALL TABLES AND ALL DATETIME COLUMNS:**
+- violate_report_* tables: format from_tm, to_tm, date_time columns
+- distance_report: format from_tm, to_tm columns  
+- util_report: format from_tm, to_tm columns
+- crm_complaint_dtls: format complaint_date column
+- ANY table with datetime/timestamp columns
+
+🎯 **AI-FIRST RULE**: When generating any SQL query, automatically scan for datetime columns and apply user-friendly formatting using TO_CHAR() function with appropriate date patterns.
+
 Always use PostgreSQL-compatible datetime functions like EXTRACT(), DATE_TRUNC(), and TO_CHAR() instead of SQLite functions like strftime().
 
 Your task:
@@ -1204,6 +1270,7 @@ If the user asks a question that appears to follow from a previous result, list,
 - **For potentially large datasets, always add LIMIT 50 to prevent performance issues.**
 - **If user asks for "all" records from large tables, suggest aggregations instead.**
 - **ALWAYS use descriptive column aliases in SQL for user-friendly display (e.g., 'reg_no as registration_number', 'name as plant_name')**
+- **CRITICAL: ALWAYS format datetime columns using TO_CHAR() for user-friendly display - NEVER return raw ISO datetime formats**
 - **NEVER include suggestions, follow-up questions, or recommendations in responses**
 - For year-based filters (e.g., "deployed in 2022"), use:
   - `EXTRACT(YEAR FROM column) = 2022`, or
