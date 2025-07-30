@@ -3,7 +3,8 @@ sys.path.append('/home/linux/Documents/chatbot-diya')
 
 from flask import Flask, request, jsonify, send_from_directory, session
 from src.core.query_agent import english_to_sql, generate_final_response, gemini_direct_answer, validate_sql_query
-from src.core.sql import run_query
+from src.core.sql import run_query, get_performance_metrics
+from src.nlp.sentence_embeddings import sentence_embedding_manager
 from decimal import Decimal
 import os
 from dotenv import load_dotenv
@@ -168,6 +169,62 @@ def get_user_context(session_id):
         user_contexts[session_id] = ChatContext()
     return user_contexts[session_id]
 
+@app.route('/api/chat/context/<session_id>', methods=['GET'])
+def get_conversation_context(session_id):
+    """Get conversational context and suggested follow-up questions for a session"""
+    try:
+        if sentence_embedding_manager:
+            # Get conversation session
+            conv_session = sentence_embedding_manager.get_or_create_conversation_session(session_id)
+            
+            # Generate context prompt (this gives us recent conversation state)
+            context_prompt = sentence_embedding_manager.generate_conversational_context_prompt(session_id, "")
+            
+            # Extract recent entities from conversation
+            context_entities = conv_session.get('recent_entities', [])
+            
+            # Generate suggested follow-up questions based on context
+            follow_up_suggestions = []
+            if context_entities:
+                # Create follow-up suggestions based on recent entities
+                for entity in context_entities[-3:]:  # Last 3 entities
+                    if entity.get('entity_type') == 'vehicle':
+                        follow_up_suggestions.append(f"Show me more details about vehicle {entity.get('value', '')}")
+                    elif entity.get('entity_type') == 'plant':
+                        follow_up_suggestions.append(f"What vehicles are at {entity.get('value', '')} plant?")
+                    elif entity.get('entity_type') == 'date':
+                        follow_up_suggestions.append(f"Show me data for the day after {entity.get('value', '')}")
+            
+            # Default suggestions if no specific context
+            if not follow_up_suggestions:
+                follow_up_suggestions = [
+                    "Show me vehicle performance reports",
+                    "Which vehicles had issues today?",
+                    "Show me plant-wise vehicle distribution"
+                ]
+            
+            return jsonify({
+                'session_id': session_id,
+                'context_summary': context_prompt[:200] + "..." if len(context_prompt) > 200 else context_prompt,
+                'recent_entities': context_entities[-5:],  # Last 5 entities
+                'follow_up_suggestions': follow_up_suggestions[:4],  # Limit to 4 suggestions
+                'has_conversation_history': len(context_entities) > 0
+            })
+        else:
+            return jsonify({
+                'session_id': session_id,
+                'context_summary': '',
+                'recent_entities': [],
+                'follow_up_suggestions': [
+                    "Show me vehicle reports",
+                    "Which vehicles had issues?",
+                    "Show me plant information"
+                ],
+                'has_conversation_history': False
+            })
+    except Exception as e:
+        return jsonify({'error': f'Failed to get conversation context: {str(e)}'}), 500
+
 @app.route('/api/chat', methods=['POST'])
 @rate_limit(requests_per_minute=8)  # Conservative rate limiting
 def chat():
@@ -188,12 +245,145 @@ def chat():
         context.history.append({'user': user_input, 'response': None})
     if chat_history and chat_history[-1].get('follow_up'):
         enriched_prompt = f"{chat_history[-1]['follow_up']}. The user clarifies: {user_input}"
-        parsed = english_to_sql(enriched_prompt, chat_context=context)
+        parsed = english_to_sql(enriched_prompt, chat_context=context, session_id=session_id)
         print(f"\n🔍 USER QUERY (Follow-up): {user_input}")
         print(f"📝 ENRICHED PROMPT: {enriched_prompt}")
     else:
-        parsed = english_to_sql(user_input, chat_context=context)
+        parsed = english_to_sql(user_input, chat_context=context, session_id=session_id)
         print(f"\n🔍 USER QUERY: {user_input}")
+    
+    # 🚀 Check if this is an AI referential response (follow-up query)
+    if parsed.get('type') in ['ai_referential_response', 'count_response', 'filtered_results', 'aggregate_result', 'detail_expansion_needed']:
+        print(f"🧠 AI REFERENTIAL RESPONSE: {parsed.get('type')}")
+        
+        # Handle detail expansion requests
+        if parsed.get('type') == 'detail_expansion_needed':
+            print(f"🔍 DETAIL EXPANSION NEEDED for entity: {parsed.get('entity')}")
+            
+            # Generate a more detailed SQL query for the specific entity
+            entity = parsed.get('entity', '')
+            detail_query = f"Show me comprehensive details about {entity}"
+            
+            # Add friendly response
+            friendly_response = f"Sure! Let me get you detailed information about {entity}..."
+            
+            # Generate SQL for detailed information
+            detailed_parsed = english_to_sql(detail_query, chat_context=context, session_id=session_id)
+            
+            if detailed_parsed.get('sql'):
+                try:
+                    columns, results = run_query(detailed_parsed['sql'])
+                    print(f"✅ DETAIL EXPANSION QUERY EXECUTED - Returned {len(results)} rows")
+                    
+                    # Convert results for conversation chain
+                    dict_results = []
+                    if columns and results:
+                        for row in results:
+                            dict_results.append(dict(zip(columns, row)))
+                    
+                    # Store in conversation chain
+                    conversation_chain.push_result(
+                        query=user_input,
+                        sql=detailed_parsed['sql'],
+                        results=dict_results,
+                        display_results=dict_results
+                    )
+                    
+                    # Generate final friendly response
+                    if len(results) > 0:
+                        final_response = f"Sure! Here are the detailed information for {entity}:"
+                    else:
+                        final_response = f"I couldn't find detailed information for {entity} in the database."
+                    
+                    return jsonify({
+                        'response': final_response,
+                        'follow_up': None,
+                        'columns': columns,
+                        'rows': results,
+                        'sql': detailed_parsed['sql'],
+                        'is_follow_up': True,
+                        'operation_type': 'detail_expansion'
+                    })
+                    
+                except Exception as e:
+                    print(f"❌ Detail expansion query failed: {e}")
+                    # Fall back to filtered results
+                    filtered_data = parsed.get('filtered_results', [])
+                    if filtered_data:
+                        columns = list(filtered_data[0].keys()) if filtered_data else []
+                        rows = [[item.get(col) for col in columns] for item in filtered_data]
+                        
+                        return jsonify({
+                            'response': f"Sure! Here are the available details for {entity}:",
+                            'follow_up': None,
+                            'columns': columns,
+                            'rows': rows,
+                            'sql': None,
+                            'is_follow_up': True,
+                            'operation_type': 'filtered_detail'
+                        })
+                    else:
+                        return jsonify({
+                            'response': f"I couldn't find information about {entity} in the previous results.",
+                            'follow_up': None,
+                            'columns': None,
+                            'rows': None,
+                            'sql': None,
+                            'is_follow_up': True,
+                            'operation_type': 'not_found'
+                        })
+        
+        # Handle other AI referential responses with friendly messages
+        operation_type = parsed.get('metadata', {}).get('operation', 'unknown')
+        
+        # Generate friendly responses based on operation type
+        friendly_responses = {
+            'count': "Sure! Let me count those for you...",
+            'filter': "Absolutely! Here are the filtered results...",
+            'aggregate': "Of course! Here's the calculation...",
+            'unknown': "Let me process that for you..."
+        }
+        
+        base_response = parsed.get('response', 'Processed your follow-up query.')
+        friendly_intro = friendly_responses.get(operation_type, "Sure! Here's what you're looking for...")
+        
+        # Combine friendly intro with actual response
+        if not base_response.startswith(("Sure", "Of course", "Absolutely", "Let me")):
+            final_response = f"{friendly_intro}\n\n{base_response}"
+        else:
+            final_response = base_response
+        
+        # Handle AI referential responses directly
+        response_data = {
+            'response': final_response,
+            'follow_up': None,
+            'sql': None,  # No SQL needed for referential queries
+            'is_follow_up': True,
+            'operation_type': operation_type
+        }
+        
+        # Add data if available (for filtered results)
+        if parsed.get('data'):
+            # Convert data to format expected by frontend
+            data = parsed['data']
+            if data and isinstance(data, list) and len(data) > 0:
+                # Get columns from first row keys
+                columns = list(data[0].keys()) if isinstance(data[0], dict) else None
+                # Convert dict rows to tuple rows for consistency
+                rows = []
+                if columns:
+                    for item in data:
+                        if isinstance(item, dict):
+                            rows.append([item.get(col) for col in columns])
+                        else:
+                            rows.append(item)
+                
+                response_data['columns'] = columns
+                response_data['rows'] = rows
+                
+                print(f"📊 AI REFERENTIAL DATA: {len(rows)} rows, {len(columns) if columns else 0} columns")
+        
+        return jsonify(response_data)
     
     # 🧠 Check if intelligent reasoning was applied
     if parsed.get('reasoning_applied'):
@@ -207,6 +397,25 @@ def chat():
             try:
                 columns, results = run_query(sql_query)
                 print(f"✅ INTELLIGENT QUERY EXECUTED - Returned {len(results)} rows")
+                
+                # 🚀 STORE RESULTS IN CONVERSATION CHAIN for follow-up queries
+                try:
+                    from src.nlp.sentence_embeddings import conversation_chain
+                    # Convert results to list of dicts for conversation chain
+                    dict_results = []
+                    if columns and results:
+                        for row in results:
+                            dict_results.append(dict(zip(columns, row)))
+                    
+                    conversation_chain.push_result(
+                        query=user_input,
+                        sql=sql_query,
+                        results=dict_results,
+                        display_results=dict_results[:50] if len(dict_results) > 50 else dict_results
+                    )
+                    print(f"📊 [CONVERSATION-CHAIN] Stored {len(dict_results)} results for follow-up queries")
+                except Exception as e:
+                    print(f"⚠️ Failed to store results in conversation chain: {e}")
                 
                 # Store results in context
                 context.add_interaction(
@@ -264,6 +473,25 @@ def chat():
                     [float(cell) if isinstance(cell, Decimal) else cell for cell in row]
                     for row in results
                 ]
+                
+                # 🚀 STORE RESULTS IN CONVERSATION CHAIN for follow-up queries
+                try:
+                    from src.nlp.sentence_embeddings import conversation_chain
+                    # Convert results to list of dicts for conversation chain
+                    dict_results = []
+                    if columns and results:
+                        for row in results:
+                            dict_results.append(dict(zip(columns, row)))
+                    
+                    conversation_chain.push_result(
+                        query=user_input,
+                        sql=final_sql,
+                        results=dict_results,
+                        display_results=dict_results[:50] if len(dict_results) > 50 else dict_results
+                    )
+                    print(f"📊 [CONVERSATION-CHAIN] Stored {len(dict_results)} results for follow-up queries")
+                except Exception as e:
+                    print(f"⚠️ Failed to store results in conversation chain: {e}")
                 
                 # Handle large result sets to prevent API quota issues
                 total_rows = len(results)
@@ -362,7 +590,21 @@ def chat():
                         final_answer = generate_final_response(user_input, columns, results, chat_context=context)
             except Exception as e:
                 print(f"💥 QUERY EXECUTION ERROR: {e}")
-                final_answer = f"❌ Failed to run your query: {e}"
+                # Convert technical errors to user-friendly messages
+                error_str = str(e)
+                if "Object of type Decimal is not JSON serializable" in error_str:
+                    final_answer = "❌ **Database Processing Error:** I encountered an issue processing the distance report data. This appears to be a data formatting problem. Please try again or contact support if the issue persists."
+                elif "JSON" in error_str and "serializable" in error_str:
+                    final_answer = "❌ **Data Format Error:** I'm having trouble processing the response data format. Please try rephrasing your query or contact support."
+                elif "connection" in error_str.lower():
+                    final_answer = "❌ **Database Connection Error:** I'm having trouble connecting to the database. Please try again in a moment."
+                elif "timeout" in error_str.lower():
+                    final_answer = "❌ **Query Timeout:** Your request is taking longer than expected. Please try a more specific query or try again later."
+                elif "permission" in error_str.lower() or "access" in error_str.lower():
+                    final_answer = "❌ **Access Error:** I don't have permission to access the requested data. Please contact your administrator."
+                else:
+                    # Generic user-friendly error for other technical issues
+                    final_answer = "I encountered an unexpected issue while processing your request. Please try rephrasing your question or contact support if the problem continues."
     elif parsed.get("force_format_response"):
         payload = parsed["force_format_response"]
         if isinstance(payload, dict):
@@ -437,6 +679,24 @@ def chat():
         'columns': columns,
         'rows': rows
     })
+
+
+@app.route('/api/performance', methods=['GET'])
+def get_performance():
+    """Get system performance metrics"""
+    try:
+        metrics = get_performance_metrics()
+        return jsonify({
+            'success': True,
+            'metrics': metrics,
+            'timestamp': time.time()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 
 if __name__ == '__main__':
     config = app.config

@@ -8,7 +8,7 @@ sys.path.append('/home/linux/Documents/chatbot-diya')
 from dotenv import load_dotenv
 import datetime
 from decimal import Decimal
-from src.core.sql import get_full_schema
+from src.core.sql import get_full_schema, DecimalEncoder
 
 # Import embeddings functionality
 try:
@@ -423,7 +423,7 @@ def generate_final_response(user_question, columns, rows, chat_context=None):
                 row_dict[col] = val
         rows_json.append(row_dict)
 
-    formatted_data = json.dumps(rows_json, separators=(',', ':'))
+    formatted_data = json.dumps(rows_json, separators=(',', ':'), cls=DecimalEncoder)
 
     formatting_prompt = f"""
 You are a helpful assistant. Given the user's question and the database results in JSON, generate the most natural, clear, and helpful answer for the user.

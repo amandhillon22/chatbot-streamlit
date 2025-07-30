@@ -9,7 +9,7 @@ and provides conversion functions for the chatbot system.
 """
 
 import re
-from src.core.sql import get_connection, get_full_schema
+from src.core.sql import db_manager, get_full_schema
 import psycopg2
 
 class DistanceUnitManager:
@@ -24,6 +24,9 @@ class DistanceUnitManager:
         
         schema_dict = get_full_schema()
         distance_keywords = ['distance', 'km', 'mile', 'meter', 'metre', 'mileage', 'odometer']
+        
+        # First pass: collect all distance columns and analyze names only
+        distance_candidates = []
         
         for schema_name, tables in schema_dict.items():
             for table_name, columns in tables.items():
@@ -40,14 +43,18 @@ class DistanceUnitManager:
                         likely_unit = self._detect_unit_from_name(col_lower)
                         self.unit_hints[column_key] = likely_unit
                         
-                        # Sample data to verify unit
-                        actual_unit = self._detect_unit_from_data(schema_name, table_name, col)
+                        # Use name-based detection for now, avoid data sampling during startup
+                        self.distance_columns[column_key] = likely_unit
                         
-                        # Final determination
-                        final_unit = actual_unit if actual_unit else likely_unit
-                        self.distance_columns[column_key] = final_unit
+                        print(f"  📏 {column_key}: {likely_unit}")
                         
-                        print(f"  📏 {column_key}: {final_unit}")
+                        # Store for potential later data sampling
+                        distance_candidates.append((schema_name, table_name, col, column_key))
+        
+        print(f"✅ Analyzed {len(self.distance_columns)} distance columns")
+        
+        # Optionally sample data for verification (but not during startup to avoid connection pool exhaustion)
+        # This can be done lazily when needed or as a background task
         
         print(f"✅ Analyzed {len(self.distance_columns)} distance columns")
     
@@ -73,22 +80,19 @@ class DistanceUnitManager:
     def _detect_unit_from_data(self, schema_name, table_name, column_name):
         """Sample data to detect if values are in meters or kilometers."""
         try:
-            conn = get_connection()
-            cur = conn.cursor()
-            
-            # Get sample non-null values
-            cur.execute(f"""
-                SELECT {column_name} 
-                FROM {schema_name}.{table_name} 
-                WHERE {column_name} IS NOT NULL 
-                  AND {column_name} > 0 
-                ORDER BY RANDOM() 
-                LIMIT 10;
-            """)
-            
-            results = cur.fetchall()
-            cur.close()
-            conn.close()
+            with db_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    # Get sample non-null values
+                    cur.execute(f"""
+                        SELECT {column_name} 
+                        FROM {schema_name}.{table_name} 
+                        WHERE {column_name} IS NOT NULL 
+                          AND {column_name} > 0 
+                        ORDER BY RANDOM() 
+                        LIMIT 10;
+                    """)
+                    
+                    results = cur.fetchall()
             
             if not results:
                 return None
@@ -113,6 +117,27 @@ class DistanceUnitManager:
         except Exception as e:
             print(f"⚠️ Could not sample data for {schema_name}.{table_name}.{column_name}: {e}")
             return None
+    
+    def verify_column_unit_with_data(self, column_key):
+        """Verify a specific column's unit by sampling data (use sparingly to avoid connection pool exhaustion)."""
+        if column_key not in self.distance_columns:
+            return None
+            
+        # Parse column key
+        parts = column_key.split('.')
+        if len(parts) != 3:
+            return None
+        schema_name, table_name, column_name = parts
+        
+        # Sample data to verify unit
+        actual_unit = self._detect_unit_from_data(schema_name, table_name, column_name)
+        
+        if actual_unit:
+            # Update our stored unit if data suggests different unit
+            self.distance_columns[column_key] = actual_unit
+            return actual_unit
+        
+        return self.distance_columns[column_key]
     
     def get_distance_columns_for_table(self, schema_name, table_name):
         """Get all distance columns for a specific table with their units."""

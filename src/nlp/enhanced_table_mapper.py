@@ -23,11 +23,42 @@ class EnhancedTableMapper:
             'site visit details': ['crm_site_visit_dtls'],
             'visit details': ['crm_site_visit_dtls'],
             
-            # Vehicle Tracking Reports (4 main types)
+            # AI-First Vehicle Tracking Reports (4 main types + intelligent patterns)
             'stoppage report': ['util_report'],
             'vehicle stoppage': ['util_report'],
             'vehicle stops': ['util_report'],
             'stop report': ['util_report'],
+            'stops': ['util_report'],
+            'idle time': ['util_report'],
+            'parked vehicles': ['util_report'],
+            'halt report': ['util_report'],
+            'vehicle break': ['util_report'],
+            'rest stops': ['util_report'],
+            'pause report': ['util_report'],
+            'journey stops': ['util_report'],
+            'trip stops': ['util_report'],
+            'travel stops': ['util_report'],
+            'vehicle halt': ['util_report'],
+            'stop duration': ['util_report'],
+            'stoppage analysis': ['util_report'],
+            'stop analysis': ['util_report'],
+            'where did vehicle stop': ['util_report'],
+            'vehicle location stops': ['util_report'],
+            'long stoppages': ['util_report'],
+            'short stoppages': ['util_report'],
+            'extended stops': ['util_report'],
+            'brief stops': ['util_report'],
+            'vehicle idle': ['util_report'],
+            'stoppage duration': ['util_report'],
+            'stop duration': ['util_report'],
+            'duration analysis': ['util_report'],
+            'where did vehicles stop': ['util_report'],
+            'where vehicles stopped': ['util_report'],
+            'vehicle stop location': ['util_report'],
+            'vehicles stop': ['util_report'],
+            'time analysis': ['util_report'],
+            'time for stoppages': ['util_report'],
+            'analysis for stoppages': ['util_report'],
             'overspeeding report': ['util_report'],
             'speed violation': ['util_report'],
             'distance report': ['distance_report'],
@@ -136,7 +167,7 @@ class EnhancedTableMapper:
             'fleet': 'vehicle_master',
         }
         
-        # Hierarchical phrase patterns
+        # AI-Enhanced hierarchical phrase patterns including stoppage intelligence
         self.hierarchical_patterns = {
             r'\b(?:what|which|show)\s+(?:zone|area)\s+(?:does|for|of)\s+(?:vehicle|truck)\s+([A-Z0-9-]+)': 
                 ['zone_master', 'district_master', 'hosp_master', 'vehicle_master'],
@@ -152,6 +183,30 @@ class EnhancedTableMapper:
                 ['hosp_master', 'vehicle_master'],
             r'\b(?:zone|region|plant|vehicle)\s+(?:hierarchy|relationship|structure)': 
                 ['zone_master', 'district_master', 'hosp_master', 'vehicle_master'],
+                
+            # AI-Enhanced Stoppage Report Patterns (ALWAYS util_report)
+            r'\b(?:stoppage|stop|stops|stoppages|idle|parked|halt|pause|break)\s+(?:report|data|info|details|analysis)': 
+                ['util_report'],
+            r'\b(?:vehicle|truck|bus)\s+([A-Z0-9\-]+)\s+(?:stoppage|stops|stopped|idle|parked)': 
+                ['util_report', 'hosp_master'],
+            r'\b(?:long|short|extended|brief)\s+(?:stoppage|stops|stoppages)': 
+                ['util_report'],
+            r'\b(?:where|location)\s+(?:did|does|vehicle|truck|vehicles|trucks)\s+(?:stop|stopped|stoppage)': 
+                ['util_report'],
+            r'\b(?:duration|time|hours|minutes)\s+(?:of|for)?\s+(?:stoppage|stops|stop|analysis)': 
+                ['util_report'],
+            r'\b(?:plant|depot|facility)\s+(?:stoppage|stops|stoppages)': 
+                ['util_report', 'hosp_master'],
+            r'\b(?:stoppage|stops)\s+(?:during|in|for)\s+(?:journey|trip|travel)': 
+                ['util_report'],
+            r'\b(?:analyze|analysis|report)\s+(?:stoppage|stops|vehicle\s+stops)': 
+                ['util_report', 'hosp_master'],
+            r'\b(?:today|yesterday|week|month|july|january|february|march|april|may|june|august|september|october|november|december)\s+(?:stoppage|stops)': 
+                ['util_report'],
+            r'\b(?:vehicles?|trucks?)\s+(?:stop|stopped|stopping)': 
+                ['util_report'],
+            r'\b(?:stoppage|stop|stops)\s+(?:duration|time|analysis)': 
+                ['util_report'],
         }
     
     def extract_keywords(self, query: str) -> Set[str]:

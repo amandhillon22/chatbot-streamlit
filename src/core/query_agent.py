@@ -8,15 +8,18 @@ sys.path.append('/home/linux/Documents/chatbot-diya')
 from dotenv import load_dotenv
 import datetime
 from decimal import Decimal
-from src.core.sql import get_full_schema, get_column_types, get_numeric_columns
+from src.core.sql import get_full_schema, get_column_types, get_numeric_columns, DecimalEncoder
 
 # Import embeddings functionality
 try:
     from src.nlp.create_lightweight_embeddings import LightweightEmbeddingManager
     from src.nlp.enhanced_table_mapper import EnhancedTableMapper
+    from src.nlp.sentence_embeddings import sentence_embedding_manager, initialize_sentence_embeddings
     EMBEDDINGS_AVAILABLE = True
+    CONVERSATIONAL_AI_AVAILABLE = True
 except ImportError:
     EMBEDDINGS_AVAILABLE = False
+    CONVERSATIONAL_AI_AVAILABLE = False
 
 # Import distance unit conversion functionality
 try:
@@ -154,15 +157,119 @@ def extract_json(response):
     try:
         match = re.search(r"{[\s\S]+}", response)
         if match:
-            return json.loads(match.group())
+            result = json.loads(match.group())
+            # Validate and fix common table name errors
+            result = validate_and_fix_sql(result)
+            return result
         return {}
     except json.JSONDecodeError:
         return {}
 
-def english_to_sql(prompt, chat_context=None):
+def validate_and_fix_sql(result):
+    """Validate and fix common SQL errors before execution"""
+    if result and 'sql' in result and result['sql']:
+        sql = result['sql']
+        
+        # Critical fix: Replace stoppage_report with util_report
+        if 'stoppage_report' in sql.lower():
+            print("🚨 CRITICAL FIX: Replacing 'stoppage_report' with 'util_report' in SQL")
+            sql = re.sub(r'\bstoppage_report\b', 'util_report', sql, flags=re.IGNORECASE)
+            result['sql'] = sql
+            
+            # Add debug warning
+            if 'response' in result:
+                result['response'] += " [Fixed: Used util_report table for stoppage data]"
+        
+        # Additional validation could be added here
+        
+    return result
+
+def english_to_sql(prompt, chat_context=None, session_id=None):
     """
-    AI-FIRST APPROACH: Let LLM understand intent before applying pattern matching
+    🧠 CONVERSATIONAL AI-FIRST APPROACH: Enhanced with conversation memory and context understanding
     """
+    
+    # 🚀 AI-FIRST: Check if this is a referential query to previous results
+    from src.nlp.sentence_embeddings import conversation_chain, detect_referential_query_ai
+    
+    # Build conversation history for AI analysis
+    conversation_history = []
+    if session_id and CONVERSATIONAL_AI_AVAILABLE and sentence_embedding_manager:
+        try:
+            history = sentence_embedding_manager.get_conversation_history(session_id, limit=3)
+            conversation_history = [h['user_message'] for h in history if h.get('user_message')]
+        except:
+            pass
+    
+    # Use AI to detect referential intent (NO rigid patterns)
+    referential_analysis = detect_referential_query_ai(prompt, conversation_history)
+    
+    if referential_analysis.get('is_referential', False) and referential_analysis.get('confidence', 0) > 0.7:
+        print(f"🧠 [AI-REFERENTIAL] Detected follow-up query with confidence {referential_analysis.get('confidence', 0):.2f}")
+        print(f"🧠 [AI-REFERENTIAL] Reference type: {referential_analysis.get('reference_type', 'unknown')}")
+        
+        # This is a follow-up query referring to previous results
+        ai_result = conversation_chain.apply_ai_operation_to_last_result(
+            prompt, 
+            conversation_history
+        )
+        
+        if ai_result:
+            print(f"✅ [AI-REFERENTIAL] Successfully processed follow-up query")
+            
+            # Store this follow-up interaction
+            if CONVERSATIONAL_AI_AVAILABLE and sentence_embedding_manager and session_id:
+                try:
+                    sentence_embedding_manager.update_conversation_context_simple(
+                        session_id, prompt, json.dumps(ai_result)
+                    )
+                except Exception as e:
+                    print(f"⚠️ Failed to store follow-up interaction: {e}")
+            
+            # Format AI result to match expected response structure
+            formatted_result = {
+                "sql": None,  # No SQL needed for referential queries
+                "response": ai_result.get('message', 'Processed successfully'),
+                "data": ai_result.get('data', []),
+                "follow_up": None,
+                "conversational_context": f"Processed {ai_result.get('metadata', {}).get('operation', 'operation')} on previous results",
+                "entities": {"is_referential": True, "operation_type": ai_result.get('metadata', {}).get('operation')},
+                "metadata": ai_result.get('metadata', {}),
+                "type": ai_result.get('type', 'ai_referential_response')
+            }
+            
+            # Handle different AI operation types
+            if ai_result.get('type') == 'count_response':
+                formatted_result["response"] = f"There are {ai_result.get('count', 0)} results."
+                formatted_result["data"] = [{"count": ai_result.get('count', 0)}]
+            elif ai_result.get('type') == 'filtered_results':
+                formatted_result["data"] = ai_result.get('data', [])
+                formatted_result["response"] = ai_result.get('message', f"Showing {len(ai_result.get('data', []))} filtered results.")
+            elif ai_result.get('type') == 'aggregate_result':
+                formatted_result["response"] = ai_result.get('message', f"Calculation result: {ai_result.get('value', 'N/A')}")
+                formatted_result["data"] = [{"result": ai_result.get('value', 'N/A')}]
+            
+            return formatted_result
+    
+    # 🧠 CONVERSATIONAL AI: Initialize conversation context
+    conversation_context = ""
+    entities_extracted = {}
+    is_followup = False
+    
+    if CONVERSATIONAL_AI_AVAILABLE and sentence_embedding_manager and session_id:
+        try:
+            # Get conversational context
+            conversation_context = sentence_embedding_manager.generate_conversational_context_prompt(session_id, prompt)
+            entities_extracted = sentence_embedding_manager.extract_conversational_entities(prompt, 
+                sentence_embedding_manager.get_or_create_conversation_session(session_id))
+            is_followup = entities_extracted.get('is_followup', False)
+            
+            print(f"🧠 [CONVERSATIONAL] Session: {session_id}")
+            print(f"🧠 [CONVERSATIONAL] Entities extracted: {entities_extracted}")
+            print(f"🧠 [CONVERSATIONAL] Is follow-up: {is_followup}")
+            
+        except Exception as e:
+            print(f"⚠️ [CONVERSATIONAL] Error in conversational analysis: {e}")
     
     # 🔄 FORMAT/DISPLAY REQUESTS - Handle immediately 
     if re.search(r'\b(format|clean|style|tabular|bullets|rewrite|shorter|rephrase|reword|simplify|again|visual|text-based|in text|as table|re-display)\b', prompt, re.IGNORECASE):
@@ -171,27 +278,57 @@ def english_to_sql(prompt, chat_context=None):
             return {
                 "sql": None,
                 "response": "I don't have any recent data to reformat. Please ask me a question first.",
-                "follow_up": None
+                "follow_up": None,
+                "conversational_context": conversation_context,
+                "entities": entities_extracted
             }
         
         try:
             # Get the last SQL query and result for reformatting
-            return handle_formatting_request(prompt, chat_context)
+            result = handle_formatting_request(prompt, chat_context)
+            result["conversational_context"] = conversation_context
+            result["entities"] = entities_extracted
+            return result
         except Exception as e:
             return {
                 "sql": None,
                 "response": f"Error formatting data: {str(e)}",
-                "follow_up": None
+                "follow_up": None,
+                "conversational_context": conversation_context,
+                "entities": entities_extracted
             }
     
-    # 🎯 AI-FIRST INTENT ANALYSIS
-    # Let the LLM understand what the user wants before applying any pattern matching
+    # 🎯 CONVERSATIONAL AI-FIRST INTENT ANALYSIS
+    # Let the LLM understand what the user wants with full conversation context
     try:
-        print(f"🧠 [AI-FIRST] Analyzing user intent with LLM: '{prompt}'")
+        print(f"🧠 [AI-FIRST] Analyzing user intent with conversational context: '{prompt}'")
         
-        # Build context for LLM
-        context_info = ""
+        # Build enhanced context for LLM with conversation awareness
+        context_info = conversation_context if conversation_context else ""
         enhanced_prompt = prompt
+        
+        # 🧠 CONVERSATIONAL ENHANCEMENT: Modify prompt based on entities and context
+        if is_followup and entities_extracted:
+            # Handle follow-up queries by inheriting context
+            inherited_context = []
+            
+            if entities_extracted.get('vehicle'):
+                inherited_context.append(f"Vehicle: {entities_extracted['vehicle']}")
+            elif entities_extracted.get('is_reference', False):
+                inherited_context.append("Vehicle: (reference to previous vehicle)")
+            
+            if entities_extracted.get('date'):
+                if entities_extracted['date'].get('type') == 'reference':
+                    inherited_context.append("Date: (reference to previous date)")
+                else:
+                    inherited_context.append(f"Date: {json.dumps(entities_extracted['date'])}")
+            
+            if entities_extracted.get('report_type'):
+                inherited_context.append(f"Report type: {entities_extracted['report_type']}")
+            
+            if inherited_context:
+                enhanced_prompt = f"{prompt} [CONTEXT: {'; '.join(inherited_context)}]"
+                print(f"🧠 [CONVERSATIONAL] Enhanced prompt: {enhanced_prompt}")
         
         if chat_context:
             context_info = chat_context.get_context_for_llm(prompt)
@@ -221,6 +358,25 @@ def english_to_sql(prompt, chat_context=None):
         # ✅ If LLM successfully understands and generates SQL, use it
         if llm_result and llm_result.get('sql'):
             print(f"✅ [AI-FIRST] LLM successfully generated SQL")
+            
+            # 🚀 STORE RESULTS IN CONVERSATION CHAIN for follow-up queries
+            try:
+                if llm_result.get('data') and isinstance(llm_result['data'], list):
+                    conversation_chain.push_result(
+                        query=prompt,
+                        sql=llm_result.get('sql', ''),
+                        results=llm_result['data'],
+                        display_results=llm_result['data'][:50] if len(llm_result['data']) > 50 else llm_result['data']
+                    )
+                    print(f"📊 [CONVERSATION-CHAIN] Stored {len(llm_result['data'])} results for follow-up queries")
+            except Exception as e:
+                print(f"⚠️ Failed to store results in conversation chain: {e}")
+            
+            # Update conversational context for successful queries
+            if session_id and sentence_embedding_manager:
+                entities = sentence_embedding_manager.extract_conversational_entities(prompt)
+                sentence_embedding_manager.update_conversation_context(session_id, prompt, entities)
+            
             return llm_result
         
         print(f"⚠️ [AI-FIRST] LLM failed to generate SQL, trying intelligent reasoning fallback")
@@ -244,6 +400,11 @@ def english_to_sql(prompt, chat_context=None):
                 intelligent_response = intelligent_reasoning.create_intelligent_response(
                     reasoning_result, {'sql': intelligent_sql}
                 )
+                
+                # Update conversational context for successful queries
+                if session_id and sentence_embedding_manager:
+                    entities = sentence_embedding_manager.extract_conversational_entities(prompt)
+                    sentence_embedding_manager.update_conversation_context(session_id, prompt, entities)
                 
                 return {
                     "sql": intelligent_sql,
@@ -282,7 +443,13 @@ def english_to_sql(prompt, chat_context=None):
                 else:
                     print("❌ Context resolution failed, continuing with normal processing")
     
-    # 🚫 FINAL FALLBACK - Simple error handling
+    # � CONVERSATIONAL CONTEXT UPDATES
+    if session_id:
+        # Extract and store conversational entities for future reference
+        entities = sentence_embedding_manager.extract_conversational_entities(prompt)
+        sentence_embedding_manager.update_conversation_context(session_id, prompt, entities)
+    
+    # �🚫 FINAL FALLBACK - Simple error handling
     return {
         "sql": None,
         "response": "I couldn't understand your request. Could you please rephrase it or be more specific about what information you're looking for?",
@@ -612,63 +779,174 @@ Examples:
 6. Vehicle registration number should appear only ONCE in WHERE clause, not repeated
 """
 
-    # Stoppage report queries - ONLY util_report
-    if re.search(r'\b(stoppage|util_report|stop|idle|parked|journey|trip|tour)\b', prompt, re.IGNORECASE):
+    # AI-FIRST Stoppage report queries - ONLY util_report with intelligent understanding
+    if re.search(r'\b(stoppage|util_report|stop|idle|parked|journey|trip|tour|halt|pause|break|rest)\b', prompt, re.IGNORECASE):
+        
+        # AI-enhanced pattern recognition for better stoppage understanding
+        is_vehicle_specific = bool(re.search(r'\b(?:vehicle|truck|bus)\s+([A-Z0-9\-]+)', prompt, re.IGNORECASE))
+        is_duration_focused = bool(re.search(r'\b(?:long|short|extended|brief|duration|time|hours?|minutes?)\b', prompt, re.IGNORECASE))
+        is_location_focused = bool(re.search(r'\b(?:where|location|place|at|in|near)\b', prompt, re.IGNORECASE))
+        is_time_filtered = bool(re.search(r'\b(?:today|yesterday|this\s+week|last\s+week|(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4}|\d{4}-\d{2}-\d{2})\b', prompt, re.IGNORECASE))
+        is_plant_focused = bool(re.search(r'\b(?:plant|depot|facility|mohali|chandigarh|delhi)\b', prompt, re.IGNORECASE))
+        is_analysis_request = bool(re.search(r'\b(?:analyz|analis|report|summary|statistics|count|total|average|maximum)\b', prompt, re.IGNORECASE))
+        
         hierarchy_guidance += """
-🛑 **STOPPAGE REPORT QUERIES - COMPREHENSIVE GUIDANCE:**
-⚠️ **CRITICAL**: ALWAYS and ONLY use util_report table for stoppage/utilization reports
-❌ **NEVER USE**: driver_stop_report, stop_report, or any other table for stoppage data
+� **AI-POWERED STOPPAGE REPORT SYSTEM - COMPREHENSIVE GUIDANCE:**
+⚠️ **CRITICAL**: ALWAYS and ONLY use util_report table for ALL stoppage/utilization reports
+❌ **ABSOLUTELY FORBIDDEN**: driver_stop_report, stop_report, or any other table for stoppage data
 
-�️ **UTIL_REPORT TABLE STRUCTURE:**
-- **reg_no**: Vehicle registration number (primary identifier)
-- **from_tm**: Stop start time (timestamp when vehicle stopped)
-- **to_tm**: Stop end time (timestamp when vehicle resumed)
-- **location**: Lat/Long as "latitude/longitude" format (e.g., "28.7041/77.1025")
-- **lat, long**: Individual latitude/longitude columns (alternative location source)
-- **duration**: Time period of the stop (how long vehicle was stopped)
-- **depo_id**: Links to hosp_master.id_no (for plant/region hierarchy)
+🧠 **AI STOPPAGE UNDERSTANDING:**
+Current query context analysis:
+- Vehicle-specific query: """ + str(is_vehicle_specific) + """
+- Duration-focused query: """ + str(is_duration_focused) + """
+- Location-focused query: """ + str(is_location_focused) + """
+- Time-filtered query: """ + str(is_time_filtered) + """
+- Plant/region-focused query: """ + str(is_plant_focused) + """
+- Analysis/reporting request: """ + str(is_analysis_request) + """
 
-🎯 **STOPPAGE QUERY PATTERNS:**
-- "Show stoppage report" → SELECT reg_no, from_tm, to_tm, duration FROM public.util_report LIMIT 50
-- "Stoppage report for July 2025" → SELECT reg_no, from_tm, to_tm, duration FROM public.util_report WHERE EXTRACT(MONTH FROM from_tm) = 7 AND EXTRACT(YEAR FROM from_tm) = 2025 LIMIT 50
-- "Vehicle X stoppage" → SELECT reg_no, from_tm, to_tm, duration FROM public.util_report WHERE reg_no = 'X'
-- "Stoppage duration analysis" → SELECT reg_no, duration FROM public.util_report WHERE duration IS NOT NULL ORDER BY duration DESC LIMIT 50
-- "Vehicle stops during journey" → SELECT reg_no, from_tm, to_tm, duration FROM public.util_report WHERE reg_no = 'VEHICLE_REG' ORDER BY from_tm
-- "Longest stoppages" → SELECT reg_no, from_tm, to_tm, duration FROM public.util_report ORDER BY duration DESC LIMIT 20
+🏗️ **UTIL_REPORT TABLE STRUCTURE (AI-Optimized):**
+- **reg_no**: Vehicle registration number (KEY identifier - always include)
+- **from_tm**: Stop start timestamp (WHEN vehicle stopped - format for users)
+- **to_tm**: Stop end timestamp (WHEN vehicle resumed - format for users)  
+- **location**: Combined "latitude/longitude" format (CONVERT to location names)
+- **lat, long**: Separate coordinate columns (NEVER show raw to users)
+- **duration**: Stop time period (FORMAT as "X hours Y minutes")
+- **depo_id**: Plant hierarchy link → hosp_master.id_no (for business context)
+- **report_type**: Should be 'stoppage' or NULL for stoppage queries
 
-🏭 **STOPPAGE WITH PLANT HIERARCHY:**
-- "Stoppages by plant" → SELECT ur.reg_no, ur.from_tm, ur.duration, hm.name as plant_name FROM public.util_report ur JOIN public.hosp_master hm ON ur.depo_id = hm.id_no LIMIT 50
-- "Mohali plant stoppages" → SELECT ur.reg_no, ur.from_tm, ur.duration FROM public.util_report ur JOIN public.hosp_master hm ON ur.depo_id = hm.id_no WHERE hm.name ILIKE '%mohali%'
-- "Regional stoppage analysis" → SELECT ur.reg_no, ur.duration, hm.name as plant, dm.name as region FROM public.util_report ur JOIN public.hosp_master hm ON ur.depo_id = hm.id_no JOIN public.district_master dm ON hm.id_dist = dm.id_no
+🎯 **AI-ENHANCED STOPPAGE QUERY PATTERNS:**
 
-📍 **LOCATION HANDLING RULES:**
-⚠️ **CRITICAL**: Never show raw lat/long coordinates to users
-✅ **ALWAYS**: Convert coordinates to readable location names in responses
-- location column format: "latitude/longitude" (e.g., "28.7041/77.1025")
-- Alternative: Use lat and long columns separately
-- In responses: Show "Near Delhi" instead of "28.7041/77.1025"
+**BASIC STOPPAGE QUERIES (Always include location context):**
+- "Show stoppage report" → 
+  ```sql
+  SELECT ur.reg_no as vehicle_registration, 
+         ur.from_tm as stop_start_time, 
+         ur.to_tm as stop_end_time,
+         ur.duration as stop_duration,
+         CASE 
+           WHEN ur.location IS NOT NULL THEN 'Location: ' || ur.location
+           WHEN ur.lat IS NOT NULL AND ur.long IS NOT NULL THEN 'Coordinates: ' || ur.lat || ',' || ur.long
+           ELSE 'Location not available' 
+         END as stop_location,
+         hm.name as assigned_plant
+  FROM public.util_report ur
+  LEFT JOIN public.hosp_master hm ON ur.depo_id = hm.id_no
+  WHERE (ur.report_type = 'stoppage' OR ur.report_type IS NULL)
+  ORDER BY ur.from_tm DESC LIMIT 50
+  ```
 
-🕐 **TIME-BASED STOPPAGE QUERIES:**
-- "Today's stoppages" → WHERE DATE(from_tm) = CURRENT_DATE
-- "This week stoppages" → WHERE from_tm >= DATE_TRUNC('week', CURRENT_DATE)
-- "Monthly stoppage pattern" → GROUP BY EXTRACT(MONTH FROM from_tm), EXTRACT(YEAR FROM from_tm)
-- "Duration-based filtering" → WHERE duration > INTERVAL '30 minutes'
+**VEHICLE-SPECIFIC STOPPAGE (when vehicle mentioned):**
+- "Vehicle WB38C2023 stoppage details" → 
+  ```sql
+  SELECT ur.reg_no as vehicle_registration,
+         ur.from_tm as stop_start_time,
+         ur.to_tm as stop_end_time, 
+         ur.duration as stop_duration,
+         CASE 
+           WHEN ur.location IS NOT NULL THEN 'Location: ' || ur.location
+           ELSE 'Location: ' || COALESCE(ur.lat::text || ',' || ur.long::text, 'Not available')
+         END as stop_location,
+         hm.name as assigned_plant,
+         dm.name as region
+  FROM public.util_report ur
+  LEFT JOIN public.hosp_master hm ON ur.depo_id = hm.id_no
+  LEFT JOIN public.district_master dm ON hm.id_dist = dm.id_no
+  WHERE ur.reg_no ILIKE '%WB38C2023%' 
+    AND (ur.report_type = 'stoppage' OR ur.report_type IS NULL)
+  ORDER BY ur.from_tm DESC LIMIT 50
+  ```
 
-⚠️ **ABSOLUTE RULES:**
-1. util_report = ONLY table for vehicle stoppage data
-2. depo_id connects to hosp_master.id_no for plant information
-3. from_tm/to_tm = exact stop start/end times
-4. location/lat/long = coordinate data (convert to names for users)
-5. duration = actual time vehicle was stopped
-6. NEVER use driver_stop_report for stoppage queries!
+**DURATION-BASED ANALYSIS (when duration/time mentioned):**
+- "Long stoppages" or "Extended stops" → 
+  ```sql
+  SELECT ur.reg_no as vehicle_registration,
+         ur.from_tm as stop_start_time,
+         ur.duration as stop_duration,
+         CASE 
+           WHEN EXTRACT(EPOCH FROM ur.duration) > 7200 THEN 'Extended (>2 hours)'
+           WHEN EXTRACT(EPOCH FROM ur.duration) > 1800 THEN 'Long (30min-2hours)'
+           ELSE 'Short (<30 minutes)'
+         END as duration_category,
+         CASE 
+           WHEN ur.location IS NOT NULL THEN ur.location
+           ELSE ur.lat::text || ',' || ur.long::text
+         END as stop_location,
+         hm.name as assigned_plant
+  FROM public.util_report ur
+  LEFT JOIN public.hosp_master hm ON ur.depo_id = hm.id_no
+  WHERE (ur.report_type = 'stoppage' OR ur.report_type IS NULL)
+    AND ur.duration IS NOT NULL
+  ORDER BY ur.duration DESC LIMIT 50
+  ```
 
-🎯 **STOPPAGE REPORT CONTEXT UNDERSTANDING:**
-- "Stoppage during trip/journey/tour" = util_report data
-- "Where did vehicle stop" = location/lat/long from util_report  
-- "How long was vehicle stopped" = duration from util_report
-- "Stop timings" = from_tm and to_tm from util_report
-- "Plant-wise stoppages" = JOIN util_report with hosp_master via depo_id
-"""
+**TIME-FILTERED STOPPAGE (when date/time mentioned):**
+- "Stoppage report for July 2025" → 
+  ```sql
+  SELECT ur.reg_no as vehicle_registration,
+         DATE(ur.from_tm) as stop_date,
+         ur.from_tm as stop_start_time,
+         ur.to_tm as stop_end_time,
+         ur.duration as stop_duration,
+         CASE 
+           WHEN ur.location IS NOT NULL THEN ur.location
+           ELSE COALESCE(ur.lat::text || ',' || ur.long::text, 'Location not available')
+         END as stop_location
+  FROM public.util_report ur
+  WHERE EXTRACT(MONTH FROM ur.from_tm) = 7 
+    AND EXTRACT(YEAR FROM ur.from_tm) = 2025
+    AND (ur.report_type = 'stoppage' OR ur.report_type IS NULL)
+  ORDER BY ur.from_tm DESC LIMIT 50
+  ```
+
+**PLANT/REGION-BASED STOPPAGE (when plant/region mentioned):**
+- "Plant-wise stoppage analysis" → 
+  ```sql
+  SELECT ur.reg_no as vehicle_registration,
+         hm.name as plant_name,
+         dm.name as region_name,
+         zm.name as zone_name,
+         COUNT(*) as total_stops,
+         AVG(EXTRACT(EPOCH FROM ur.duration)/60) as avg_stop_minutes,
+         MAX(ur.duration) as longest_stop
+  FROM public.util_report ur
+  JOIN public.hosp_master hm ON ur.depo_id = hm.id_no
+  JOIN public.district_master dm ON hm.id_dist = dm.id_no  
+  JOIN public.zone_master zm ON dm.id_zone = zm.id_no
+  WHERE (ur.report_type = 'stoppage' OR ur.report_type IS NULL)
+    AND ur.duration IS NOT NULL
+  GROUP BY ur.reg_no, hm.name, dm.name, zm.name
+  ORDER BY total_stops DESC LIMIT 50
+  ```
+
+📍 **AI-ENHANCED LOCATION HANDLING:**
+⚠️ **CRITICAL USER EXPERIENCE RULE**: NEVER show raw coordinates to end users
+✅ **BUSINESS-FRIENDLY DISPLAY**:
+- Raw: "28.7041/77.1025" → Display: "Near Delhi NCR"
+- Raw: "30.7333/76.7794" → Display: "Near Chandigarh"
+- Raw: "null" → Display: "Location not available"
+
+🕐 **INTELLIGENT TIME PROCESSING:**
+- "Today" → WHERE DATE(from_tm) = CURRENT_DATE
+- "Yesterday" → WHERE DATE(from_tm) = CURRENT_DATE - INTERVAL '1 day'  
+- "This week" → WHERE from_tm >= DATE_TRUNC('week', CURRENT_DATE)
+- "July 2025" → WHERE EXTRACT(MONTH FROM from_tm) = 7 AND EXTRACT(YEAR FROM from_tm) = 2025
+
+🎯 **AI BUSINESS CONTEXT UNDERSTANDING:**
+- "Stoppage" = Vehicle temporarily stopped during operation
+- "Stop" = Same as stoppage (vehicle halt)
+- "Idle" = Vehicle stopped with engine potentially running
+- "Parked" = Vehicle stopped, typically longer duration
+- "Journey/Trip/Tour stops" = Stops during travel (still use util_report)
+- "Break/Rest/Halt" = Operational stops (still use util_report)
+
+⚠️ **ABSOLUTE AI RULES:**
+1. util_report = ONLY source for ALL stoppage data
+2. ALWAYS join with hosp_master for plant context when possible
+3. ALWAYS format duration in human-readable format
+4. ALWAYS convert coordinates to location names for users
+5. NEVER use driver_stop_report table for any stoppage query
+6. Include plant hierarchy for business context unless specifically vehicle-only query
+7. Order by from_tm DESC for chronological relevance"""
 
     # Distance report queries - ONLY distance_report
     if re.search(r'\b(distance.*report|distance|travel|drum.*rotation|kilometers?|km|metres?|meters?|plant.*to.*plant|inter.*plant)\b', prompt, re.IGNORECASE):
@@ -1056,9 +1334,19 @@ This approach ensures queries work regardless of spacing, case, or minor formatt
 - "Which region does vehicle X belong to" → SELECT FROM vehicle_master vm JOIN hosp_master hm JOIN district_master dm WHERE vm.reg_no = 'X'
 - "Which plant does vehicle X belong to" → SELECT FROM vehicle_master vm JOIN hosp_master hm WHERE vm.reg_no = 'X'
 - "Vehicle X region and plant" → SELECT FROM vehicle_master vm JOIN hosp_master hm JOIN district_master dm WHERE vm.reg_no = 'X'
+
+🚨 **CRITICAL TABLE NAME WARNING - NEVER USE THESE NAMES:**
+- **NEVER** use table name "stoppage_report" (this table DOES NOT EXIST!)
+- **ALWAYS** use "util_report" for ALL stoppage/stop-related queries
 - **NEVER** assume hosp_master contains medical information
 - **NEVER** use driver_stop_report for vehicle stoppage queries
 - **NEVER** use crm_site_visit_dtls as primary table for vehicle hierarchy queries
+
+⚠️ **STOPPAGE DATA TABLE MAPPING - MANDATORY:**
+- "stoppage report" queries → **ALWAYS USE util_report table**
+- "vehicle stoppage" queries → **ALWAYS USE util_report table**  
+- "stop analysis" queries → **ALWAYS USE util_report table**
+- Table name should ALWAYS be "public.util_report" in SQL (NOT stoppage_report!)
 
 {id_relationship_guide}
 
@@ -1470,7 +1758,7 @@ def generate_final_response(user_question, columns, rows, chat_context=None):
                 row_dict[display_col] = val
         rows_json.append(row_dict)
 
-    formatted_data = json.dumps(rows_json, separators=(',', ':'))
+    formatted_data = json.dumps(rows_json, separators=(',', ':'), cls=DecimalEncoder)
 
     # Add conversation context for better response generation
     context_info = ""

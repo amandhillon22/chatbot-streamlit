@@ -5,17 +5,15 @@ import sys
 sys.path.append('/home/linux/Documents/chatbot-diya')
 
 from datetime import datetime
-from src.core.sql import get_connection
+from src.core.sql import db_manager
 
 class UserManager:
     def __init__(self):
-        self.connection = None
+        pass
     
     def get_connection(self):
-        """Get database connection"""
-        if not self.connection:
-            self.connection = get_connection()
-        return self.connection
+        """Get database connection using the new context manager"""
+        return db_manager.get_connection_context()
     
     def hash_password(self, password):
         """Simple MD5 hash for password (in production, use bcrypt)"""
@@ -24,33 +22,33 @@ class UserManager:
     def authenticate_user(self, username, password):
         """Authenticate user with username and password"""
         try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            password_hash = self.hash_password(password)
-            cursor.execute(
-                "SELECT id, username FROM users WHERE username = %s AND password_hash = %s",
-                (username, password_hash)
-            )
-            
-            user = cursor.fetchone()
-            
-            if user:
-                # Update last login
-                cursor.execute(
-                    "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = %s",
-                    (user[0],)
-                )
-                conn.commit()
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
                 
-                return {
-                    'id': user[0],
-                    'username': user[1],
-                    'authenticated': True
-                }
-            
-            return {'authenticated': False}
-            
+                password_hash = self.hash_password(password)
+                cursor.execute(
+                    "SELECT id, username FROM users WHERE username = %s AND password_hash = %s",
+                    (username, password_hash)
+                )
+                
+                user = cursor.fetchone()
+                
+                if user:
+                    # Update last login
+                    cursor.execute(
+                        "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = %s",
+                        (user[0],)
+                    )
+                    conn.commit()
+                    
+                    return {
+                        'id': user[0],
+                        'username': user[1],
+                        'authenticated': True
+                    }
+                
+                return {'authenticated': False}
+                
         except Exception as e:
             print(f"Authentication error: {e}")
             return {'authenticated': False}
@@ -58,17 +56,17 @@ class UserManager:
     def create_user(self, username, password):
         """Create a new user"""
         try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            password_hash = self.hash_password(password)
-            cursor.execute(
-                "INSERT INTO users (username, password_hash) VALUES (%s, %s) RETURNING id",
-                (username, password_hash)
-            )
-            
-            user_id = cursor.fetchone()[0]
-            conn.commit()
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                password_hash = self.hash_password(password)
+                cursor.execute(
+                    "INSERT INTO users (username, password_hash) VALUES (%s, %s) RETURNING id",
+                    (username, password_hash)
+                )
+                
+                user_id = cursor.fetchone()[0]
+                conn.commit()
             
             return {
                 'id': user_id,
@@ -84,13 +82,11 @@ class UserManager:
 
 class ChatHistoryManager:
     def __init__(self):
-        self.connection = None
+        pass
     
     def get_connection(self):
-        """Get database connection"""
-        if not self.connection:
-            self.connection = get_connection()
-        return self.connection
+        """Get database connection using the new manager"""
+        return db_manager.get_connection()
     
     def create_chat_session(self, user_id, title=None):
         """Create a new chat session"""

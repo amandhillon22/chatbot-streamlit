@@ -10,3 +10,4 @@ pgvector
 scikit-learn
 numpy
 requests
+redis

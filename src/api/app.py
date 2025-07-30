@@ -235,7 +235,22 @@ if st.session_state.chat_history and st.session_state.chat_history[-1]['response
                 }
                 final_answer = generate_final_response(user_input, columns, results)
             except Exception as e:
-                final_answer = f"❌ Failed to run your query: {e}"
+                print(f"💥 QUERY EXECUTION ERROR: {e}")
+                # Convert technical errors to user-friendly messages
+                error_str = str(e)
+                if "Object of type Decimal is not JSON serializable" in error_str:
+                    final_answer = "❌ **Database Processing Error:** I encountered an issue processing the distance report data. This appears to be a data formatting problem. Please try again or contact support if the issue persists."
+                elif "JSON" in error_str and "serializable" in error_str:
+                    final_answer = "❌ **Data Format Error:** I'm having trouble processing the response data format. Please try rephrasing your query or contact support."
+                elif "connection" in error_str.lower():
+                    final_answer = "❌ **Database Connection Error:** I'm having trouble connecting to the database. Please try again in a moment."
+                elif "timeout" in error_str.lower():
+                    final_answer = "❌ **Query Timeout:** Your request is taking longer than expected. Please try a more specific query or try again later."
+                elif "permission" in error_str.lower() or "access" in error_str.lower():
+                    final_answer = "❌ **Access Error:** I don't have permission to access the requested data. Please contact your administrator."
+                else:
+                    # Generic user-friendly error for other technical issues
+                    final_answer = "I encountered an unexpected issue while processing your request. Please try rephrasing your question or contact support if the problem continues."
     elif parsed.get("force_format_response"):
         payload = parsed["force_format_response"]
         if isinstance(payload, dict):
