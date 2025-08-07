@@ -45,6 +45,167 @@ class IntelligentReasoning:
             self.data_masker = None
             print("⚠️ EONINFOTECH masker not available - data will not be masked")
         
+        # DPR Master 1 (Daily Production Report) business context
+        self.dpr_business_context = {
+            'table_name': 'dpr_master1',
+            'description': 'Daily Production Report for concrete orders and deliveries',
+            'key_columns': {
+                'id_no': 'Unique row identifier',
+                'plant_id': 'Links to hosp_master.id_no for plant details',
+                'pi_name': 'Plant incharge name',
+                'cust_name': 'Customer name for delivery',
+                'cust_id': 'Links to site_customer1.id_no for customer details',
+                'site_name': 'Delivery site name',
+                'site_id': 'Links to site_master1.id_no for site details',
+                'fse_name': 'Sales person name (format: surname, firstname)',
+                'site_distance': 'Distance from plant to site (km)',
+                'tm_no': 'Transit Mixer registration (links to vehicle_master.reg_no)',
+                'vol_cum': 'Concrete volume in TM (out of 7 m³ total)',
+                'grade': 'Concrete mixture grade',
+                'smode': 'Service mode (with pump/without pump)',
+                'bth_name': 'Batch/Batching order name',
+                'tkt_no': 'Ticket number (links to drum_trip_report.tkt_no)',
+                'pump_name': 'Pump name if smode = "with pump"',
+                'challan_no': 'Challan number',
+                'so_number': 'Sales order number',
+                'cost_m3': 'Ready-mix cost per m³',
+                'plant_code': 'Plant code',
+                'batch_code': 'Batch code'
+            },
+            'relationships': {
+                'plant_details': 'dpr_master1.plant_id = hosp_master.id_no',
+                'customer_info': 'dpr_master1.cust_id = site_customer1.id_no',
+                'site_details': 'dpr_master1.site_id = site_master1.id_no',
+                'vehicle_info': 'dpr_master1.tm_no = vehicle_master.reg_no',
+                'trip_tracking': 'dpr_master1.tkt_no = drum_trip_report.tkt_no'
+            },
+            'business_rules': {
+                'tm_capacity': 'Total Transit Mixer capacity is 7 m³',
+                'name_format': 'fse_name stored as "surname, firstname" → display as "firstname surname"',
+                'service_modes': ['with pump', 'without pump'],
+                'table_priority': 'Always use dpr_master1, never dpr_master'
+            }
+        }
+        
+        # Driver Master business context
+        self.driver_business_context = {
+            'table_name': 'driver_master',
+            'description': 'Comprehensive driver information for transportation fleet management',
+            'key_columns': {
+                'id_no': 'Primary key - Driver unique identifier',
+                'first_name': 'Driver first name',
+                'last_name': 'Driver last name (surname)',
+                'dt_of_birth': 'Date of birth for age calculation',
+                'dt_of_joining': 'Employment start date for service duration',
+                'gender': 'Driver gender (Male/Female)',
+                'telephone': 'Mobile contact number (unique)',
+                'lic_no': 'Driving license number (unique)',
+                'lic_issue': 'License issue date',
+                'lic_exp': 'License expiry date for renewal tracking',
+                'd_code': 'Driver code (unique alphanumeric identifier)',
+                'id_depo': 'Plant assignment (links to hosp_master.id_no)',
+                'tshirt_size': 'Uniform size (S, M, L, XL)'
+            },
+            'relationships': {
+                'plant_assignment': 'driver_master.id_depo = hosp_master.id_no',
+                'referenced_by': 'Any table with drv_id, driver_id, or similar links to driver_master.id_no'
+            },
+            'business_rules': {
+                'name_display': 'Display as "first_name + last_name" (firstname lastname format)',
+                'unique_constraints': ['d_code', 'lic_no', 'telephone'],
+                'license_monitoring': 'Track lic_exp for renewal alerts',
+                'plant_hierarchy': 'id_depo determines plant assignment through hosp_master'
+            }
+        }
+        
+        # Driver query patterns
+        self.driver_query_patterns = {
+            'driver_lookup': [
+                'driver details', 'driver information', 'driver profile',
+                'find driver', 'driver search', 'driver by name',
+                'about driver', 'driver info', 'tell me about'
+            ],
+            'license_management': [
+                'license expiry', 'license renewal', 'driving license',
+                'expired license', 'license status', 'lic_exp'
+            ],
+            'plant_assignment': [
+                'driver assignment', 'plant drivers', 'drivers at plant',
+                'depot drivers', 'driver location'
+            ],
+            'contact_info': [
+                'driver contact', 'driver phone', 'driver mobile',
+                'contact number', 'telephone number'
+            ],
+            'demographics': [
+                'driver age', 'driver gender', 'driver statistics',
+                'driver demographics', 'male drivers', 'female drivers',
+                'birthday', 'birth date', 'date of birth', 'born',
+                'when was born', 'birthday gift', 'age of driver'
+            ],
+            'service_duration': [
+                'driver experience', 'years of service', 'joining date',
+                'service period', 'employment duration'
+            ],
+            'uniform_management': [
+                'tshirt size', 'uniform size', 'driver uniform',
+                'shirt size', 'clothing size', 'size of', 'what size',
+                't-shirt', 'tshirt', 'uniform'
+            ],
+            'driver_codes': [
+                'driver code', 'd_code', 'driver identifier',
+                'driver id', 'employee code'
+            ],
+            'driver_assignments': [
+                'driver assignment', 'current assignment', 'assigned driver',
+                'driver schedule', 'driver roster', 'assignment history',
+                'driver allocation', 'assigned to', 'driver duty',
+                'assignment status', 'active assignment', 'vehicle assignment',
+                'plant assignment today', 'driver currently assigned',
+                'assignment duration', 'assignment period', 'duty schedule',
+                'driver availability', 'assignment conflict', 'overlap',
+                'double assignment', 'scheduling conflict',
+                'delivery assignment', 'concrete delivery', 'driver performance',
+                'assignment efficiency', 'delivery performance',
+                'driver plant mapping', 'plant drivers', 'depot assignment'
+            ]
+        }
+        
+        # DPR query patterns
+        self.dpr_query_patterns = {
+            'daily_production': [
+                'daily production', 'production report', 'dpr', 'concrete orders',
+                'concrete delivery', 'ready mix', 'readymix'
+            ],
+            'customer_orders': [
+                'customer order', 'customer delivery', 'customer concrete',
+                'delivery to customer', 'customer site'
+            ],
+            'transit_mixer': [
+                'transit mixer', 'tm', 'concrete truck', 'mixer truck',
+                'tm utilization', 'mixer capacity'
+            ],
+            'sales_person': [
+                'sales person', 'fse', 'sales executive', 'sales performance'
+            ],
+            'concrete_grade': [
+                'concrete grade', 'mixture grade', 'concrete type',
+                'grade analysis'
+            ],
+            'pump_analysis': [
+                'with pump', 'without pump', 'pump delivery',
+                'pump vs non-pump', 'pump utilization'
+            ],
+            'site_distance': [
+                'site distance', 'delivery distance', 'distance analysis',
+                'distance optimization'
+            ],
+            'batch_orders': [
+                'batch order', 'batching order', 'batch name',
+                'batch code', 'production batch'
+            ]
+        }
+
         self.core_hierarchy = {
             'zone_master': {
                 'primary_key': 'id_no',
@@ -2380,9 +2541,745 @@ class IntelligentReasoning:
             'report_type': 'distance_aggregation',
             'table': 'distance_report',
             'aggregation': aggregation_type,
-            'group_by': 'reg_no',
-            'additional_joins': ['vehicle_master', 'hosp_master', 'district_master']
         }
+
+    def detect_dpr_query_type(self, user_input):
+        """Detect Daily Production Report query patterns"""
+        user_input_lower = user_input.lower()
+        
+        # Check for DPR-specific patterns
+        for query_type, patterns in self.dpr_query_patterns.items():
+            if any(pattern in user_input_lower for pattern in patterns):
+                return query_type
+        
+        return None
+
+    def generate_dpr_sql(self, user_input, entities):
+        """Generate SQL for Daily Production Report queries"""
+        query_type = self.detect_dpr_query_type(user_input)
+        user_input_lower = user_input.lower()
+        
+        base_query = """
+        SELECT 
+            dpr.id_no,
+            hm.name as plant_name,
+            dpr.pi_name as plant_incharge,
+            dpr.cust_name as customer_name,
+            dpr.site_name,
+            CASE 
+                WHEN dpr.fse_name LIKE '%,%' 
+                THEN TRIM(SUBSTRING(dpr.fse_name FROM POSITION(',' IN dpr.fse_name) + 1)) || ' ' || TRIM(SUBSTRING(dpr.fse_name FROM 1 FOR POSITION(',' IN dpr.fse_name) - 1))
+                ELSE dpr.fse_name 
+            END as sales_person,
+            dpr.site_distance,
+            dpr.tm_no as transit_mixer,
+            dpr.vol_cum as volume_m3,
+            dpr.grade as concrete_grade,
+            dpr.smode as service_mode,
+            dpr.bth_name as batch_name,
+            dpr.tkt_no as ticket_number,
+            dpr.pump_name,
+            dpr.challan_no,
+            dpr.so_number as sales_order,
+            dpr.cost_m3 as cost_per_m3,
+            dpr.plant_code,
+            dpr.batch_code
+        FROM dpr_master1 dpr
+        LEFT JOIN hosp_master hm ON dpr.plant_id = hm.id_no
+        """
+        
+        # Add specific conditions based on query type
+        conditions = []
+        
+        if query_type == 'customer_orders':
+            if any(term in user_input_lower for term in ['specific customer', 'customer name']):
+                # Extract customer name if mentioned
+                for entity in entities:
+                    if entity.get('entity_type') == 'customer':
+                        conditions.append(f"dpr.cust_name ILIKE '%{entity['value']}%'")
+            
+        elif query_type == 'transit_mixer':
+            if 'utilization' in user_input_lower:
+                base_query = """
+                SELECT 
+                    dpr.tm_no as transit_mixer,
+                    COUNT(*) as delivery_count,
+                    AVG(dpr.vol_cum) as avg_volume,
+                    SUM(dpr.vol_cum) as total_volume,
+                    AVG(dpr.site_distance) as avg_distance
+                FROM dpr_master1 dpr
+                """
+                base_query += " GROUP BY dpr.tm_no ORDER BY delivery_count DESC"
+                return base_query
+            
+        elif query_type == 'sales_person':
+            base_query = """
+            SELECT 
+                CASE 
+                    WHEN dpr.fse_name LIKE '%,%' 
+                    THEN TRIM(SUBSTRING(dpr.fse_name FROM POSITION(',' IN dpr.fse_name) + 1)) || ' ' || TRIM(SUBSTRING(dpr.fse_name FROM 1 FOR POSITION(',' IN dpr.fse_name) - 1))
+                    ELSE dpr.fse_name 
+                END as sales_person,
+                COUNT(*) as order_count,
+                SUM(dpr.vol_cum) as total_volume,
+                AVG(dpr.cost_m3) as avg_cost_per_m3,
+                hm.name as plant_name
+            FROM dpr_master1 dpr
+            LEFT JOIN hosp_master hm ON dpr.plant_id = hm.id_no
+            """
+            base_query += " GROUP BY dpr.fse_name, hm.name ORDER BY order_count DESC"
+            return base_query
+            
+        elif query_type == 'pump_analysis':
+            if 'vs' in user_input_lower or 'comparison' in user_input_lower:
+                base_query = """
+                SELECT 
+                    dpr.smode as service_mode,
+                    COUNT(*) as delivery_count,
+                    AVG(dpr.vol_cum) as avg_volume,
+                    AVG(dpr.site_distance) as avg_distance,
+                    AVG(dpr.cost_m3) as avg_cost_per_m3
+                FROM dpr_master1 dpr
+                """
+                base_query += " GROUP BY dpr.smode ORDER BY delivery_count DESC"
+                return base_query
+        
+        elif query_type == 'concrete_grade':
+            if 'analysis' in user_input_lower or 'summary' in user_input_lower:
+                base_query = """
+                SELECT 
+                    dpr.grade as concrete_grade,
+                    COUNT(*) as order_count,
+                    SUM(dpr.vol_cum) as total_volume,
+                    AVG(dpr.cost_m3) as avg_cost_per_m3,
+                    AVG(dpr.site_distance) as avg_delivery_distance
+                FROM dpr_master1 dpr
+                """
+                base_query += " GROUP BY dpr.grade ORDER BY order_count DESC"
+                return base_query
+        
+        # Add date filters if date entities are found
+        for entity in entities:
+            if entity.get('entity_type') == 'date':
+                # Assuming there's a date column (you may need to adjust this)
+                conditions.append(f"DATE(dpr.created_date) = '{entity['value']}'")
+        
+        # Add plant filter if plant entity is found
+        for entity in entities:
+            if entity.get('entity_type') == 'plant':
+                conditions.append(f"hm.name ILIKE '%{entity['value']}%'")
+        
+        # Add vehicle filter if vehicle entity is found
+        for entity in entities:
+            if entity.get('entity_type') == 'vehicle':
+                conditions.append(f"dpr.tm_no ILIKE '%{entity['value']}%'")
+        
+        # Add WHERE clause if conditions exist
+        if conditions:
+            base_query += " WHERE " + " AND ".join(conditions)
+        
+        # Add default ordering
+        base_query += " ORDER BY dpr.id_no DESC LIMIT 50"
+        
+        return base_query
+
+    def is_dpr_related_query(self, user_input):
+        """Check if the query is related to Daily Production Report"""
+        dpr_keywords = [
+            'dpr', 'daily production', 'production report', 'concrete order',
+            'concrete delivery', 'ready mix', 'readymix', 'transit mixer',
+            'tm', 'concrete truck', 'customer delivery', 'site delivery',
+            'sales person', 'fse', 'concrete grade', 'batch order',
+            'pump delivery', 'challan', 'sales order'
+        ]
+        
+        user_input_lower = user_input.lower()
+        return any(keyword in user_input_lower for keyword in dpr_keywords)
+
+    def detect_driver_query_type(self, user_input):
+        """Detect the type of driver-related query"""
+        user_input_lower = user_input.lower()
+        
+        # Check each driver query pattern
+        for query_type, patterns in self.driver_query_patterns.items():
+            if any(pattern in user_input_lower for pattern in patterns):
+                return query_type
+        
+        # Additional specific driver detection
+        driver_indicators = [
+            'driver', 'drivers', 'drv_id', 'driver_id', 'd_code',
+            'license', 'licence', 'mobile', 'phone', 'contact',
+            'tshirt', 'uniform', 'assignment', 'depot'
+        ]
+        
+        if any(indicator in user_input_lower for indicator in driver_indicators):
+            return 'driver_lookup'  # Default driver query type
+        
+        return None
+
+    def generate_driver_sql(self, query_type, user_input, entities=None):
+        """Generate SQL for driver-related queries"""
+        if entities is None:
+            entities = []
+        
+        base_query = """
+        SELECT 
+            dm.id_no,
+            CONCAT(dm.first_name, ' ', dm.last_name) AS driver_name,
+            dm.d_code AS driver_code,
+            dm.telephone AS mobile_number,
+            dm.lic_no AS license_number,
+            dm.lic_exp AS license_expiry,
+            dm.dt_of_birth,
+            dm.dt_of_joining,
+            dm.gender,
+            dm.tshirt_size,
+            hm.name AS assigned_plant,
+            hm.hosp_code AS plant_code
+        FROM driver_master dm
+        LEFT JOIN hosp_master hm ON dm.id_depo = hm.id_no
+        """
+        
+        conditions = []
+        
+        if query_type == 'license_management':
+            # Focus on license-related information
+            base_query = """
+            SELECT 
+                dm.id_no,
+                CONCAT(dm.first_name, ' ', dm.last_name) AS driver_name,
+                dm.d_code AS driver_code,
+                dm.lic_no AS license_number,
+                dm.lic_issue AS license_issued,
+                dm.lic_exp AS license_expiry,
+                CASE 
+                    WHEN dm.lic_exp < CURRENT_DATE THEN 'EXPIRED'
+                    WHEN dm.lic_exp <= CURRENT_DATE + INTERVAL '30 days' THEN 'EXPIRES_SOON'
+                    ELSE 'VALID'
+                END AS license_status,
+                dm.telephone AS mobile_number,
+                hm.name AS assigned_plant
+            FROM driver_master dm
+            LEFT JOIN hosp_master hm ON dm.id_depo = hm.id_no
+            """
+            
+            # Check for expiry-related queries
+            if any(word in user_input.lower() for word in ['expir', 'renew', 'expired']):
+                conditions.append("dm.lic_exp <= CURRENT_DATE + INTERVAL '90 days'")
+        
+        elif query_type == 'plant_assignment':
+            # Focus on plant assignment
+            conditions.append("dm.id_depo IS NOT NULL")
+        
+        elif query_type == 'contact_info':
+            # Focus on contact information
+            base_query = """
+            SELECT 
+                dm.id_no,
+                CONCAT(dm.first_name, ' ', dm.last_name) AS driver_name,
+                dm.d_code AS driver_code,
+                dm.telephone AS mobile_number,
+                hm.name AS assigned_plant,
+                hm.hosp_code AS plant_code
+            FROM driver_master dm
+            LEFT JOIN hosp_master hm ON dm.id_depo = hm.id_no
+            """
+            conditions.append("dm.telephone IS NOT NULL AND dm.telephone != ''")
+        
+        elif query_type == 'demographics':
+            # Focus on demographic analysis
+            if any(word in user_input.lower() for word in ['birthday', 'birth', 'born']):
+                base_query = """
+                SELECT 
+                    dm.id_no,
+                    CONCAT(dm.first_name, ' ', dm.last_name) AS driver_name,
+                    dm.d_code AS driver_code,
+                    dm.dt_of_birth AS birth_date,
+                    TO_CHAR(dm.dt_of_birth, 'DD-MM-YYYY') AS formatted_birth_date,
+                    TO_CHAR(dm.dt_of_birth, 'DD Month') AS birthday,
+                    EXTRACT(YEAR FROM AGE(CURRENT_DATE, dm.dt_of_birth)) AS age,
+                    dm.gender,
+                    hm.name AS assigned_plant
+                FROM driver_master dm
+                LEFT JOIN hosp_master hm ON dm.id_depo = hm.id_no
+                """
+                conditions.append("dm.dt_of_birth IS NOT NULL")
+            elif 'age' in user_input.lower():
+                base_query = """
+                SELECT 
+                    dm.id_no,
+                    CONCAT(dm.first_name, ' ', dm.last_name) AS driver_name,
+                    dm.dt_of_birth,
+                    EXTRACT(YEAR FROM AGE(CURRENT_DATE, dm.dt_of_birth)) AS age,
+                    dm.gender,
+                    hm.name AS assigned_plant
+                FROM driver_master dm
+                LEFT JOIN hosp_master hm ON dm.id_depo = hm.id_no
+                """
+                conditions.append("dm.dt_of_birth IS NOT NULL")
+            else:
+                # General demographics
+                base_query = """
+                SELECT 
+                    dm.gender,
+                    COUNT(*) AS driver_count,
+                    AVG(EXTRACT(YEAR FROM AGE(CURRENT_DATE, dm.dt_of_birth))) AS average_age
+                FROM driver_master dm
+                WHERE dm.dt_of_birth IS NOT NULL
+                GROUP BY dm.gender
+                """
+                return base_query  # Special case - already complete
+        
+        elif query_type == 'service_duration':
+            # Focus on service duration
+            base_query = """
+            SELECT 
+                dm.id_no,
+                CONCAT(dm.first_name, ' ', dm.last_name) AS driver_name,
+                dm.d_code AS driver_code,
+                dm.dt_of_joining,
+                EXTRACT(YEAR FROM AGE(CURRENT_DATE, dm.dt_of_joining)) AS years_of_service,
+                hm.name AS assigned_plant
+            FROM driver_master dm
+            LEFT JOIN hosp_master hm ON dm.id_depo = hm.id_no
+            """
+            conditions.append("dm.dt_of_joining IS NOT NULL")
+        
+        elif query_type == 'uniform_management':
+            # Check if asking about specific person's size vs. general distribution
+            has_person_name = bool(re.search(r'\b[A-Z][a-z]+\s+[A-Z][a-z]+\b', user_input))
+            
+            if has_person_name:
+                # Individual driver size query
+                base_query = """
+                SELECT 
+                    dm.id_no,
+                    CONCAT(dm.first_name, ' ', dm.last_name) AS driver_name,
+                    dm.d_code AS driver_code,
+                    dm.tshirt_size AS uniform_size,
+                    CASE 
+                        WHEN dm.tshirt_size IS NULL OR dm.tshirt_size = '' THEN 'Size not recorded'
+                        ELSE CONCAT('T-shirt size: ', dm.tshirt_size)
+                    END AS size_info,
+                    hm.name AS assigned_plant
+                FROM driver_master dm
+                LEFT JOIN hosp_master hm ON dm.id_depo = hm.id_no
+                """
+                # Don't add tshirt_size filter here - let it show even if size is not recorded
+            else:
+                # General uniform distribution
+                base_query = """
+                SELECT 
+                    dm.tshirt_size,
+                    COUNT(*) AS driver_count,
+                    STRING_AGG(CONCAT(dm.first_name, ' ', dm.last_name), ', ') AS drivers
+                FROM driver_master dm
+                WHERE dm.tshirt_size IS NOT NULL AND dm.tshirt_size != ''
+                GROUP BY dm.tshirt_size
+                ORDER BY dm.tshirt_size
+                """
+                return base_query  # Special case - already complete
+        
+        elif query_type == 'driver_assignments':
+            # Focus on driver assignments and scheduling
+            if any(word in user_input.lower() for word in ['current', 'active', 'today', 'now']):
+                # Current active assignments
+                base_query = """
+                SELECT 
+                    da.id AS assignment_id,
+                    CONCAT(dm.first_name, ' ', dm.last_name) AS driver_name,
+                    da.d_code AS driver_code,
+                    vm.vehicle_no,
+                    vm.chassis_no,
+                    hm.name AS plant_name,
+                    da.date_from AS assignment_start,
+                    da.date_to AS assignment_end,
+                    CASE 
+                        WHEN da.date_to IS NULL THEN 'ACTIVE'
+                        WHEN da.date_to >= CURRENT_DATE THEN 'ACTIVE'
+                        ELSE 'COMPLETED'
+                    END AS assignment_status,
+                    da.remarks
+                FROM driver_assignment da
+                LEFT JOIN driver_master dm ON da.d_code = dm.d_code
+                LEFT JOIN vehicle_master vm ON da.vehicle_no = vm.vehicle_no
+                LEFT JOIN hosp_master hm ON da.id_depo = hm.id_no
+                """
+                conditions.append("(da.date_to IS NULL OR da.date_to >= CURRENT_DATE)")
+            
+            elif any(word in user_input.lower() for word in ['history', 'past', 'previous', 'all']):
+                # Assignment history
+                base_query = """
+                SELECT 
+                    da.id AS assignment_id,
+                    CONCAT(dm.first_name, ' ', dm.last_name) AS driver_name,
+                    da.d_code AS driver_code,
+                    vm.vehicle_no,
+                    hm.name AS plant_name,
+                    da.date_from AS assignment_start,
+                    da.date_to AS assignment_end,
+                    CASE 
+                        WHEN da.date_to IS NULL THEN 'ACTIVE'
+                        WHEN da.date_to >= CURRENT_DATE THEN 'ACTIVE'
+                        ELSE 'COMPLETED'
+                    END AS assignment_status,
+                    EXTRACT(DAYS FROM (COALESCE(da.date_to, CURRENT_DATE) - da.date_from)) AS assignment_duration_days
+                FROM driver_assignment da
+                LEFT JOIN driver_master dm ON da.d_code = dm.d_code
+                LEFT JOIN vehicle_master vm ON da.vehicle_no = vm.vehicle_no
+                LEFT JOIN hosp_master hm ON da.id_depo = hm.id_no
+                """
+            
+            elif any(word in user_input.lower() for word in ['conflict', 'overlap', 'double']):
+                # Assignment conflicts
+                base_query = """
+                SELECT 
+                    da1.d_code AS driver_code,
+                    CONCAT(dm.first_name, ' ', dm.last_name) AS driver_name,
+                    da1.vehicle_no AS vehicle1,
+                    da2.vehicle_no AS vehicle2,
+                    da1.date_from AS assignment1_start,
+                    da1.date_to AS assignment1_end,
+                    da2.date_from AS assignment2_start,
+                    da2.date_to AS assignment2_end,
+                    'ASSIGNMENT_CONFLICT' AS issue_type
+                FROM driver_assignment da1
+                JOIN driver_assignment da2 ON da1.d_code = da2.d_code AND da1.id != da2.id
+                LEFT JOIN driver_master dm ON da1.d_code = dm.d_code
+                WHERE da1.date_from <= COALESCE(da2.date_to, CURRENT_DATE)
+                AND COALESCE(da1.date_to, CURRENT_DATE) >= da2.date_from
+                """
+            
+            elif any(word in user_input.lower() for word in ['performance', 'efficiency', 'delivery']):
+                # Performance analysis
+                base_query = """
+                SELECT 
+                    da.d_code AS driver_code,
+                    CONCAT(dm.first_name, ' ', dm.last_name) AS driver_name,
+                    COUNT(da.id) AS total_assignments,
+                    AVG(EXTRACT(DAYS FROM (COALESCE(da.date_to, CURRENT_DATE) - da.date_from))) AS avg_assignment_duration,
+                    COUNT(CASE WHEN da.date_to IS NULL OR da.date_to >= CURRENT_DATE THEN 1 END) AS active_assignments,
+                    hm.name AS primary_plant
+                FROM driver_assignment da
+                LEFT JOIN driver_master dm ON da.d_code = dm.d_code
+                LEFT JOIN hosp_master hm ON da.id_depo = hm.id_no
+                GROUP BY da.d_code, dm.first_name, dm.last_name, hm.name
+                """
+            
+            else:
+                # Default: Current assignments with basic info
+                base_query = """
+                SELECT 
+                    da.id AS assignment_id,
+                    CONCAT(dm.first_name, ' ', dm.last_name) AS driver_name,
+                    da.d_code AS driver_code,
+                    vm.vehicle_no,
+                    hm.name AS plant_name,
+                    da.date_from AS assignment_start,
+                    da.date_to AS assignment_end,
+                    CASE 
+                        WHEN da.date_to IS NULL THEN 'ACTIVE'
+                        WHEN da.date_to >= CURRENT_DATE THEN 'ACTIVE'
+                        ELSE 'COMPLETED'
+                    END AS assignment_status
+                FROM driver_assignment da
+                LEFT JOIN driver_master dm ON da.d_code = dm.d_code
+                LEFT JOIN vehicle_master vm ON da.vehicle_no = vm.vehicle_no
+                LEFT JOIN hosp_master hm ON da.id_depo = hm.id_no
+                """
+        
+        # Add entity-based filters
+        for entity in entities:
+            if entity.get('entity_type') == 'driver_name':
+                name_parts = entity['value'].split()
+                if len(name_parts) == 1:
+                    conditions.append(f"(dm.first_name ILIKE '%{name_parts[0]}%' OR dm.last_name ILIKE '%{name_parts[0]}%')")
+                else:
+                    conditions.append(f"dm.first_name ILIKE '%{name_parts[0]}%' AND dm.last_name ILIKE '%{name_parts[-1]}%'")
+            
+            elif entity.get('entity_type') == 'plant':
+                conditions.append(f"hm.name ILIKE '%{entity['value']}%'")
+            
+            elif entity.get('entity_type') == 'driver_code':
+                conditions.append(f"dm.d_code ILIKE '%{entity['value']}%'")
+            
+            elif entity.get('entity_type') == 'license_number':
+                conditions.append(f"dm.lic_no ILIKE '%{entity['value']}%'")
+            
+            elif entity.get('entity_type') == 'vehicle_number':
+                if query_type == 'driver_assignments':
+                    conditions.append(f"da.vehicle_no ILIKE '%{entity['value']}%'")
+            
+            elif entity.get('entity_type') == 'assignment_status':
+                if query_type == 'driver_assignments':
+                    status = entity['value'].lower()
+                    if status in ['active', 'current']:
+                        conditions.append("(da.date_to IS NULL OR da.date_to >= CURRENT_DATE)")
+                    elif status in ['completed', 'finished']:
+                        conditions.append("da.date_to < CURRENT_DATE")
+            
+            elif entity.get('entity_type') == 'date':
+                if query_type == 'driver_assignments':
+                    conditions.append(f"da.date_from <= '{entity['value']}' AND (da.date_to IS NULL OR da.date_to >= '{entity['value']}')")
+        
+        # Add WHERE clause if conditions exist
+        if conditions:
+            base_query += " WHERE " + " AND ".join(conditions)
+        
+        # Add default ordering
+        base_query += " ORDER BY dm.first_name, dm.last_name LIMIT 50"
+        
+        return base_query
+
+    def is_driver_related_query(self, user_input):
+        """Check if the query is related to driver management"""
+        driver_keywords = [
+            'driver', 'drivers', 'drv_id', 'driver_id', 'd_code',
+            'license', 'licence', 'driving license', 'mobile number',
+            'phone', 'contact', 'tshirt', 'uniform', 'assignment',
+            'depot', 'plant assignment', 'driver details', 'employee',
+            'birthday', 'birth date', 'date of birth', 'born', 'age',
+            'driver assignment', 'current assignment', 'assigned driver',
+            'driver schedule', 'driver roster', 'assignment history',
+            'driver allocation', 'assigned to', 'driver duty',
+            'assignment status', 'active assignment', 'vehicle assignment',
+            'assignment duration', 'assignment conflict', 'duty schedule',
+            'driver availability', 'scheduling conflict', 'delivery assignment'
+        ]
+        
+        user_input_lower = user_input.lower()
+        
+        # Direct keyword matching
+        has_driver_keyword = any(keyword in user_input_lower for keyword in driver_keywords)
+        
+        # Check for person name patterns with driver-related attributes
+        # Look for both capitalized and lowercase name patterns
+        has_person_name = (
+            bool(re.search(r'\b[A-Z][a-z]+\s+[A-Z][a-z]+\b', user_input)) or  # Capitalized names
+            bool(re.search(r'\b[a-z]+\s+[a-z]+\b', user_input_lower))  # Lowercase names that could be names
+        )
+        
+        person_with_driver_attributes = (
+            # Pattern: "PersonName + driver_attribute" (e.g., "kailash mahto tshirt size")
+            any(attr in user_input_lower for attr in ['tshirt', 'uniform', 'size', 'birthday', 'birth', 'age', 'mobile', 'phone']) and
+            has_person_name
+        )
+        
+        # Check for "size of PersonName" patterns
+        size_of_person = (
+            'size of' in user_input_lower and has_person_name
+        )
+        
+        # Check for birthday/birth-related queries that might be about drivers
+        birthday_queries = (
+            any(word in user_input_lower for word in ['birthday', 'birth', 'born', 'age']) and has_person_name
+        )
+        
+        # Check for "tell me about PersonName" patterns (could be driver info)
+        tell_about_person = (
+            any(phrase in user_input_lower for phrase in ['tell me about', 'about']) and has_person_name
+        )
+        
+        return has_driver_keyword or person_with_driver_attributes or birthday_queries or size_of_person or tell_about_person
+
+    def extract_entities(self, user_input, conversation_context=None):
+        """Extract entities from user input for driver queries"""
+        entities = []
+        user_input_lower = user_input.lower()
+        
+        # Extract driver names (look for patterns like "driver John", "John Smith", etc.)
+        import re
+        
+        # Pattern for driver names after keywords like "driver", "find", "show"
+        name_patterns = [
+            r'driver\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)',
+            r'named?\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)',
+            r'called\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)',
+            r'about\s+([A-Za-z]+(?:\s+[A-Za-z]+))'  # Handle "tell me about john smith"
+        ]
+        
+        for pattern in name_patterns:
+            matches = re.finditer(pattern, user_input, re.IGNORECASE)
+            for match in matches:
+                name = match.group(1).strip()
+                if len(name) > 1:  # Avoid single characters
+                    entities.append({
+                        'entity_type': 'driver_name',
+                        'value': name,
+                        'confidence': 0.8
+                    })
+        
+        # Extract standalone person names (First Last format)
+        # Look for capitalized words that appear to be names
+        person_name_pattern = r'\b([A-Z][a-z]+)\s+([A-Z][a-z]+)\b'
+        name_matches = re.finditer(person_name_pattern, user_input)
+        
+        for match in name_matches:
+            full_name = match.group(0).strip()
+            first_name = match.group(1)
+            last_name = match.group(2)
+            
+            # Skip common non-name patterns
+            skip_patterns = ['When Was', 'What Size', 'Tell Me', 'Show Me', 'Find All']
+            if full_name not in skip_patterns:
+                entities.append({
+                    'entity_type': 'driver_name',
+                    'value': full_name,
+                    'first_name': first_name,
+                    'last_name': last_name,
+                    'confidence': 0.9
+                })
+        
+        # Also look for lowercase names that might be driver names
+        # This handles cases like "kailash mahto"
+        # Use a more specific approach to find names
+        words = user_input_lower.split()
+        skip_words = ['of', 'to', 'is', 'in', 'on', 'at', 'by', 'for', 'the', 'and', 'or', 'but', 'what', 'when', 'where', 'why', 'how', 'was', 'were', 'his', 'her', 'it', 'size', 'me', 'about', 'tell', 'give', 'want', 'birthday', 'gift', 'forgot']
+        
+        # Look for consecutive pairs of non-skip words that could be names
+        for i in range(len(words) - 1):
+            first_word = words[i]
+            second_word = words[i + 1]
+            
+            if (len(first_word) > 2 and len(second_word) > 2 and 
+                first_word not in skip_words and second_word not in skip_words and
+                first_word.isalpha() and second_word.isalpha()):
+                
+                # Capitalize for display
+                display_name = f"{first_word.title()} {second_word.title()}"
+                
+                # Check if we already have this name
+                if not any(e['value'] == display_name for e in entities):
+                    entities.append({
+                        'entity_type': 'driver_name',
+                        'value': display_name,
+                        'first_name': first_word.title(),
+                        'last_name': second_word.title(),
+                        'confidence': 0.8
+                    })
+        
+        # Extract plant names
+        plant_patterns = [
+            r'plant\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)',
+            r'at\s+([A-Za-z]+(?:\s+plant)?)',
+            r'depot\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)'
+        ]
+        
+        for pattern in plant_patterns:
+            matches = re.finditer(pattern, user_input, re.IGNORECASE)
+            for match in matches:
+                plant = match.group(1).strip()
+                # Skip obvious non-plant words
+                skip_plant_words = ['is', 'the', 'a', 'an', 'this', 'that', 'these', 'those']
+                if len(plant) > 1 and plant.lower() not in skip_plant_words:
+                    entities.append({
+                        'entity_type': 'plant',
+                        'value': plant,
+                        'confidence': 0.7
+                    })
+        
+        # Extract driver codes
+        code_patterns = [
+            r'd_code\s*[:=]?\s*([A-Za-z0-9]+)',
+            r'driver code\s*[:=]?\s*([A-Za-z0-9]+)',
+            r'code\s+([A-Za-z0-9]+)'
+        ]
+        
+        for pattern in code_patterns:
+            matches = re.finditer(pattern, user_input, re.IGNORECASE)
+            for match in matches:
+                code = match.group(1).strip()
+                if len(code) > 1:
+                    entities.append({
+                        'entity_type': 'driver_code',
+                        'value': code,
+                        'confidence': 0.9
+                    })
+        
+        # Extract license numbers
+        license_patterns = [
+            r'license\s*(?:number|no\.?)?\s*[:=]?\s*([A-Za-z0-9\-]+)',
+            r'lic_no\s*[:=]?\s*([A-Za-z0-9\-]+)'
+        ]
+        
+        for pattern in license_patterns:
+            matches = re.finditer(pattern, user_input, re.IGNORECASE)
+            for match in matches:
+                license_no = match.group(1).strip()
+                if len(license_no) > 3:  # License numbers are usually longer
+                    entities.append({
+                        'entity_type': 'license_number',
+                        'value': license_no,
+                        'confidence': 0.9
+                    })
+        
+        # Extract vehicle numbers for assignment queries
+        vehicle_patterns = [
+            r'vehicle\s*(?:number|no\.?)?\s*[:=]?\s*([A-Za-z0-9\-]+)',
+            r'vehicle_no\s*[:=]?\s*([A-Za-z0-9\-]+)',
+            r'truck\s*(?:number|no\.?)?\s*[:=]?\s*([A-Za-z0-9\-]+)',
+            r'\b([A-Z]{2}\d{2}[A-Z]{2}\d{4})\b',  # Pattern for vehicle registration numbers
+            r'\b([A-Z]{2}\-\d{2}\-[A-Z]{2}\-\d{4})\b'  # Alternative format
+        ]
+        
+        for pattern in vehicle_patterns:
+            matches = re.finditer(pattern, user_input, re.IGNORECASE)
+            for match in matches:
+                vehicle_no = match.group(1).strip()
+                if len(vehicle_no) > 3:
+                    entities.append({
+                        'entity_type': 'vehicle_number',
+                        'value': vehicle_no,
+                        'confidence': 0.8
+                    })
+        
+        # Extract assignment status
+        status_patterns = [
+            (r'\b(active|current|ongoing)\b', 'active'),
+            (r'\b(completed|finished|ended|past)\b', 'completed'),
+            (r'\b(all|total)\b', 'all')
+        ]
+        
+        for pattern, status_type in status_patterns:
+            if re.search(pattern, user_input, re.IGNORECASE):
+                entities.append({
+                    'entity_type': 'assignment_status',
+                    'value': status_type,
+                    'confidence': 0.7
+                })
+        
+        # Extract dates for assignment queries
+        date_patterns = [
+            r'\b(\d{4}-\d{2}-\d{2})\b',  # YYYY-MM-DD
+            r'\b(\d{2}-\d{2}-\d{4})\b',  # DD-MM-YYYY
+            r'\b(\d{1,2}/\d{1,2}/\d{4})\b',  # M/D/YYYY or MM/DD/YYYY
+            r'\btoday\b',
+            r'\byesterday\b',
+            r'\btomorrow\b'
+        ]
+        
+        for pattern in date_patterns:
+            matches = re.finditer(pattern, user_input, re.IGNORECASE)
+            for match in matches:
+                date_value = match.group(0).strip()
+                # Convert relative dates to actual dates
+                if date_value.lower() == 'today':
+                    from datetime import date
+                    date_value = date.today().strftime('%Y-%m-%d')
+                elif date_value.lower() == 'yesterday':
+                    from datetime import date, timedelta
+                    date_value = (date.today() - timedelta(days=1)).strftime('%Y-%m-%d')
+                elif date_value.lower() == 'tomorrow':
+                    from datetime import date, timedelta
+                    date_value = (date.today() + timedelta(days=1)).strftime('%Y-%m-%d')
+                
+                entities.append({
+                    'entity_type': 'date',
+                    'value': date_value,
+                    'confidence': 0.8
+                })
+        
+        return entities
 
     def _extract_inter_plant_criteria(self, query: str, match, chat_context) -> Optional[Dict]:
         """Extract criteria for inter-plant distance queries"""

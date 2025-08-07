@@ -1921,9 +1921,63 @@
 - `dpr_master_pkey`: CREATE UNIQUE INDEX dpr_master_pkey ON public.dpr_master USING btree (id_no)
 - `dpr_master_tkt_no_key`: CREATE UNIQUE INDEX dpr_master_tkt_no_key ON public.dpr_master USING btree (tkt_no)
 - `dpr1`: CREATE INDEX dpr1 ON public.dpr_master USING btree (insert_ts, tm_no)
-## 🗂️ Table: `dpr_master1`
+## 🗂️ Table: `dpr_master1` (Daily Production Report)
 
 **📊 Rows:** 3259577
+
+**🏗️ Business Context:** This table contains daily production reports for concrete orders and deliveries. It tracks concrete production, delivery assignments, and customer orders on a daily basis. This table is interconnected with `trip_report` and `drum_trip_report` for complete delivery tracking.
+
+**⚠️ Important:** Always use `dpr_master1`, never `dpr_master`. This is the preferred table for daily production reports.
+
+### 📋 Business Column Details
+
+| Column | Data Type | Description | Business Rules |
+|--------|-----------|-------------|----------------|
+| `id_no` | integer | Unique row identifier | Primary key |
+| `plant_id` | integer | Links to hosp_master.id_no | Plant details reference |
+| `pi_name` | character varying | Plant incharge name | Person responsible for plant |
+| `cust_name` | character varying | Customer name | Delivery recipient |
+| `cust_id` | integer | Links to site_customer1.id_no | Customer details reference |
+| `site_name` | character varying | Delivery site name | Where concrete is delivered |
+| `site_id` | integer | Links to site_master1.id_no | Site details reference |
+| `fse_name` | character varying | Sales person name | **Format:** "surname, firstname" → **Display as:** "firstname surname" |
+| `site_distance` | double precision | Site distance from plant (km) | Distance in kilometers |
+| `tm_no` | character varying | Transit Mixer registration | Links to vehicle_master.reg_no |
+| `vol_cum` | double precision | Concrete volume in TM (m³) | **Out of 7 m³ total capacity** |
+| `grade` | character varying | Concrete mixture grade | Technical specification |
+| `smode` | character varying | Service mode | **"with pump"** or **"without pump"** |
+| `bth_name` | character varying | Batch/Batching order name | Production batch identifier |
+| `tkt_no` | integer | Ticket number | Links to drum_trip_report.tkt_no |
+| `pump_name` | character varying | Pump name (if smode = "with pump") | Equipment used |
+| `challan_no` | character varying | Challan number | Delivery document reference |
+| `so_no` | character varying | Sales order number (SO number) | Order identifier |
+| `cost_m3` | double precision | Ready-mix cost per m³ | RM Cost |
+| `plant_code` | character varying | Plant code | Plant identifier |
+| `batch_code` | character varying | Batch code | Batch identifier |
+
+### 🔗 Key Business Relationships
+- **Plant Details:** `plant_id` → `hosp_master.id_no`
+- **Customer Info:** `cust_id` → `site_customer1.id_no`
+- **Site Details:** `site_id` → `site_master1.id_no`
+- **Vehicle Info:** `tm_no` → `vehicle_master.reg_no`
+- **Trip Tracking:** `tkt_no` → `drum_trip_report.tkt_no`
+
+### 📏 Business Rules
+1. **Transit Mixer Capacity:** Total capacity is always **7 m³**, `vol_cum` shows actual load
+2. **Name Formatting:** `fse_name` stored as "surname, firstname" → display as "firstname surname"
+3. **Service Modes:** Either "with pump" or "without pump"
+4. **Table Priority:** Always use `dpr_master1`, never `dpr_master`
+5. **Interconnected Data:** Links with `trip_report` and `drum_trip_report` for complete delivery tracking
+
+### 🔍 Common Query Patterns
+- Daily production reports by plant
+- Customer delivery tracking
+- Transit mixer utilization analysis
+- Sales person performance reports
+- Concrete grade distribution
+- Pump vs non-pump delivery analysis
+- Distance-based delivery optimization
+- Batch order tracking
 
 ### Columns
 | Column Name | Data Type | Is Nullable |
@@ -1996,21 +2050,55 @@
 
 **📊 Rows:** 360001
 
+**🚛 Business Context:** This table contains critical driver-vehicle assignment information for concrete delivery operations, tracking which drivers are assigned to specific vehicles for concrete mixture delivery orders and their assignment time periods.
+
+### 📋 Business Rules & Important Information
+- **Assignment Tracking:** Links drivers to vehicles for specific delivery assignments with date/time periods
+- **Plant Association:** `id_depo` connects assignments to specific plants through `hosp_master.id_no`
+- **Driver Reference:** `driver_id` links to `driver_master.id_no` for complete driver information
+- **Vehicle Reference:** `reg_no` identifies the assigned vehicle (links to vehicle registration)
+- **Time Management:** Assignment periods defined by `from_dt`/`from_tm` to `to_dt`/`to_tm`
+- **Active Assignments:** Current assignments where `to_dt` is NULL or future date
+- **Historical Tracking:** Complete assignment history maintained for auditing and reporting
+- **Delivery Operations:** Essential for concrete delivery scheduling and driver-vehicle coordination
+
+### 🔍 Common Query Patterns
+1. **Current Assignments:** Find active driver-vehicle assignments (to_dt IS NULL or future)
+2. **Driver History:** Track all assignments for a specific driver over time
+3. **Vehicle Usage:** Show which drivers have operated a specific vehicle
+4. **Plant Operations:** List all assignments for drivers at a specific plant
+5. **Assignment Duration:** Calculate assignment periods and utilization
+6. **Delivery Scheduling:** Match drivers to vehicles for concrete delivery orders
+7. **Conflict Detection:** Identify overlapping assignments or scheduling conflicts
+8. **Performance Analysis:** Analyze driver-vehicle assignment patterns and efficiency
+
 ### Columns
-| Column Name | Data Type | Is Nullable |
-|-------------|-----------|-------------|
-| id_no | integer | NO |
-| id_depo | integer | YES |
-| reg_no | character varying | YES |
-| driver_id | integer | YES |
-| from_dt | date | YES |
-| from_tm | time without time zone | YES |
-| to_dt | date | YES |
-| to_tm | time without time zone | YES |
-| shift | integer | YES |
-| created_by_user | text | YES |
-| link_id | integer | YES |
-| driver_id2 | integer | YES |
+| Column Name | Data Type | Is Nullable | Business Description |
+|-------------|-----------|-------------|---------------------|
+| id_no | integer | NO | 🔑 **Primary Key** - Unique assignment record identifier |
+| id_depo | integer | YES | 🏭 **Plant Reference** - Links to hosp_master.id_no for plant/depot location |
+| reg_no | character varying | YES | 🚛 **Vehicle Registration** - Registration number of assigned vehicle |
+| driver_id | integer | YES | 👤 **Driver Reference** - Links to driver_master.id_no for driver details |
+| from_dt | date | YES | 📅 **Assignment Start Date** - When the driver assignment begins |
+| from_tm | time without time zone | YES | ⏰ **Assignment Start Time** - Specific start time for the assignment |
+| to_dt | date | YES | 📅 **Assignment End Date** - When the assignment ends (NULL = ongoing) |
+| to_tm | time without time zone | YES | ⏰ **Assignment End Time** - Specific end time for the assignment |
+| shift | integer | YES | 🕐 **Shift Identifier** - Work shift designation (1=Morning, 2=Evening, etc.) |
+| created_by_user | text | YES | 👨‍💼 **Creator** - User who created the assignment record |
+| link_id | integer | YES | 🔗 **Link Reference** - Additional linking for complex assignments |
+| driver_id2 | integer | YES | 👥 **Secondary Driver** - Secondary/backup driver for the assignment |
+
+### 🔗 Table Relationships
+- **hosp_master:** `driver_assignment.id_depo` → `hosp_master.id_no` (Plant/Depot location)
+- **driver_master:** `driver_assignment.driver_id` → `driver_master.id_no` (Primary driver)
+- **driver_master (secondary):** `driver_assignment.driver_id2` → `driver_master.id_no` (Secondary driver)
+- **vehicle_master:** `driver_assignment.reg_no` → `vehicle_master.reg_no` (Assigned vehicle)
+
+### 🕐 Assignment Status Logic
+- **Active Assignment:** `to_dt IS NULL OR to_dt >= CURRENT_DATE`
+- **Completed Assignment:** `to_dt < CURRENT_DATE AND to_dt IS NOT NULL`
+- **Future Assignment:** `from_dt > CURRENT_DATE`
+- **Current Day Assignment:** `from_dt <= CURRENT_DATE AND (to_dt IS NULL OR to_dt >= CURRENT_DATE)`
 
 ### 🔐 Primary Keys
 - id_no
@@ -2028,40 +2116,65 @@
 
 **📊 Rows:** 3522
 
+**🚛 Business Context:** This table contains comprehensive driver information for the transportation fleet, including personal details, licensing information, and work assignments for all drivers operating concrete transit mixers and delivery vehicles.
+
+### 📋 Business Rules & Important Information
+- **Driver Identification:** `id_no` is the primary key that other tables reference through columns named `drv_id`, `driver_id`, or similar variations
+- **Name Display:** Driver names should be displayed as `first_name + " " + last_name` (firstname lastname format)
+- **Plant Assignment:** `id_depo` links to `hosp_master.id_no` to determine which plant/depot the driver is assigned to
+- **License Management:** All drivers must have valid licenses; monitor `lic_exp` for upcoming expirations
+- **Contact Information:** `telephone` contains mobile numbers for direct driver communication
+- **Uniform Management:** `tshirt_size` tracks uniform sizes (S, M, L, XL) for logistics purposes
+- **Unique Constraints:** Each driver has unique `d_code`, `lic_no`, and `telephone` numbers
+
+### 🔍 Common Query Patterns
+1. **Driver Lookup:** Find driver by name, code, or license number
+2. **Plant Assignment:** List all drivers assigned to a specific plant
+3. **License Expiry:** Identify drivers with expiring licenses (within 30/60/90 days)
+4. **Contact Information:** Get driver contact details for communication
+5. **Age Calculation:** Calculate driver age using `dt_of_birth`
+6. **Service Duration:** Calculate years of service using `dt_of_joining`
+7. **Gender Distribution:** Analyze driver demographics
+8. **Uniform Requirements:** Track uniform sizes for inventory management
+
 ### Columns
-| Column Name | Data Type | Is Nullable |
-|-------------|-----------|-------------|
-| id_no | bigint | NO |
-| first_name | character varying | NO |
-| last_name | character varying | NO |
-| father_name | character varying | YES |
-| dt_of_birth | date | YES |
-| dt_of_joining | date | YES |
-| gender | character varying | YES |
-| blood | character varying | YES |
-| street1 | character varying | YES |
-| street2 | character varying | YES |
-| city | character varying | YES |
-| state | character varying | YES |
-| zip | character varying | YES |
-| telephone | character varying | YES |
-| lic_no | character varying | YES |
-| lic_issue | character varying | YES |
-| lic_date | date | YES |
-| lic_exp | date | YES |
-| lic_token | character varying | YES |
-| acc_no | character varying | YES |
-| ret_dead | character varying | YES |
-| d_code | text | YES |
-| id_depo | integer | YES |
-| status | character varying | YES |
-| mother_plant | character varying | YES |
-| lic_pic | text | YES |
-| qr_created | timestamp without time zone | YES |
-| vendor_id | integer | YES |
-| last_code | character varying | YES |
-| truein_response | text | YES |
-| tshirt_size | character | YES |
+| Column Name | Data Type | Is Nullable | Business Description |
+|-------------|-----------|-------------|---------------------|
+| id_no | bigint | NO | 🔑 **Primary Key** - Unique driver identifier (referenced as drv_id/driver_id in other tables) |
+| first_name | character varying | NO | 👤 **First Name** - Driver's given name |
+| last_name | character varying | NO | 👤 **Last Name** - Driver's family name |
+| father_name | character varying | YES | 👨‍👦 Father's name (legacy data) |
+| dt_of_birth | date | YES | 🎂 **Date of Birth** - Used for age calculation and verification |
+| dt_of_joining | date | YES | 📅 **Joining Date** - Employment start date for service calculation |
+| gender | character varying | YES | ⚧ **Gender** - Male/Female for demographic analysis |
+| blood | character varying | YES | 🩸 Blood group (emergency purposes) |
+| street1 | character varying | YES | 🏠 Address line 1 |
+| street2 | character varying | YES | 🏠 Address line 2 |
+| city | character varying | YES | 🏙️ City name |
+| state | character varying | YES | 📍 State/province |
+| zip | character varying | YES | 📮 Postal code |
+| telephone | character varying | YES | 📱 **Mobile Number** - Primary contact number (unique) |
+| lic_no | character varying | YES | 🪪 **License Number** - Driving license number (unique) |
+| lic_issue | character varying | YES | 📋 **License Issue Date** - When license was issued |
+| lic_date | date | YES | 📋 License date (alternative field) |
+| lic_exp | date | YES | ⏰ **License Expiry** - Monitor for renewal requirements |
+| lic_token | character varying | YES | 🎫 License token/reference |
+| acc_no | character varying | YES | 🏦 Account number |
+| ret_dead | character varying | YES | 📊 Retirement/status flag |
+| d_code | text | YES | 🔢 **Driver Code** - Unique alphanumeric driver identifier |
+| id_depo | integer | YES | 🏭 **Plant Assignment** - Links to hosp_master.id_no for plant/depot |
+| status | character varying | YES | ✅ Employment status (Active/Inactive) |
+| mother_plant | character varying | YES | 🏭 Primary plant assignment |
+| lic_pic | text | YES | 📷 License picture/document |
+| qr_created | timestamp without time zone | YES | 📱 QR code generation timestamp |
+| vendor_id | integer | YES | 🤝 Vendor association |
+| last_code | character varying | YES | 🔄 Last assigned code |
+| truein_response | text | YES | 📊 System response data |
+| tshirt_size | character | YES | 👕 **T-shirt Size** - Uniform size (S, M, L, XL) |
+
+### 🔗 Table Relationships
+- **hosp_master:** `driver_master.id_depo` → `hosp_master.id_no` (Plant/Depot assignment)
+- **Referenced by:** Any table with `drv_id`, `driver_id`, or similar columns links to `driver_master.id_no`
 
 ### 🔐 Primary Keys
 - id_no
@@ -2154,42 +2267,71 @@
 
 **📊 Rows:** 3590193
 
-### Columns
-| Column Name | Data Type | Is Nullable |
-|-------------|-----------|-------------|
-| reg_no | character varying | NO |
-| depo_id | integer | YES |
-| plant_out | timestamp without time zone | NO |
-| site_in | timestamp without time zone | YES |
-| ps_duration | time without time zone | YES |
-| ps_kms | double precision | YES |
-| ps_max_speed | double precision | YES |
-| ps_avg_speed | double precision | YES |
-| unloading_time | text | YES |
-| unloading_duration | time without time zone | YES |
-| site_waiting | time without time zone | YES |
-| site_out | timestamp without time zone | YES |
-| plant_in | timestamp without time zone | YES |
-| sp_duration | time without time zone | YES |
-| sp_kms | double precision | YES |
-| sp_max_speed | double precision | YES |
-| sp_avg_speed | double precision | YES |
-| plant_lat | character varying | YES |
-| plant_lng | character varying | YES |
-| site_lat | character varying | YES |
-| site_lng | character varying | YES |
-| cycle_km | double precision | YES |
-| cycle_time | time without time zone | YES |
-| tkt_no | integer | YES |
-| drum_in_plant | double precision | YES |
-| unloading_cnt | integer | YES |
-| loading_cnt | integer | YES |
+**🏢 Business Context:** Transit Mixer (TM) concrete drum trip operations - tracks complete plant-to-site-to-plant cycles for concrete delivery vehicles
+
+**🔄 Key Relationships:**
+- Links to `vehicle_master` via `reg_no` for vehicle details
+- Links to `hosp_master` via `depo_id` for plant information  
+- Links to `veh_type` through vehicle_master.dept_no → veh_type.id_no (vehicle type "TRUCK" = Transit Mixer)
+- Links to `dpr_master` via `tkt_no` for additional delivery information
+
+### Columns (Business Definitions)
+| Column Name | Data Type | Business Meaning | AI Display As |
+|-------------|-----------|------------------|---------------|
+| reg_no | character varying | Vehicle registration number | Registration Number |
+| depo_id | integer | Plant/depot ID (links to hosp_master) | Plant ID |
+| plant_out | timestamp | Departure time from plant | Plant Departure |
+| site_in | timestamp | Arrival time at customer site | Site Arrival |
+| ps_duration | time | Travel time from plant to site | Plant-to-Site Duration |
+| ps_kms | double precision | Distance from plant to site (kilometers) | Plant-to-Site Distance (km) |
+| ps_max_speed | double precision | Maximum speed during plant-to-site journey | Plant-to-Site Max Speed |
+| ps_avg_speed | double precision | Average speed during plant-to-site journey | Plant-to-Site Avg Speed |
+| unloading_time | text | Raw unloading time data | Unloading Time |
+| unloading_duration | time | Time taken to unload concrete at site | Unloading Duration |
+| site_waiting | time | Waiting time at site before unloading | Site Waiting Time |
+| site_out | timestamp | Departure time from customer site | Site Departure |
+| plant_in | timestamp | Return arrival time at plant | Plant Return |
+| sp_duration | time | Travel time from site back to plant | Site-to-Plant Duration |
+| sp_kms | double precision | Distance from site to plant (kilometers) | Site-to-Plant Distance (km) |
+| sp_max_speed | double precision | Maximum speed during site-to-plant journey | Site-to-Plant Max Speed |
+| sp_avg_speed | double precision | Average speed during site-to-plant journey | Site-to-Plant Avg Speed |
+| plant_lat | character varying | Plant latitude coordinates | Plant Location (convert coordinates) |
+| plant_lng | character varying | Plant longitude coordinates | Plant Location (convert coordinates) |
+| site_lat | character varying | Customer site latitude coordinates | Site Location (convert coordinates) |
+| site_lng | character varying | Customer site longitude coordinates | Site Location (convert coordinates) |
+| cycle_km | double precision | Total distance for complete cycle (km) | Total Cycle Distance (km) |
+| cycle_time | time | Total time for complete plant-site-plant cycle | Total Cycle Time |
+| tkt_no | integer | Delivery ticket number (links to dpr_master) | Ticket Number |
+| drum_in_plant | double precision | Loading time for concrete into drum | Loading Time |
+| unloading_cnt | integer | Unloading count (internal - don't display) | - |
+| loading_cnt | integer | Loading count (internal - don't display) | - |
+
+**🎯 AI Query Patterns:**
+- "drum trip", "concrete delivery", "transit mixer trips", "TM trips"
+- "plant to site", "delivery cycle", "concrete transport"
+- "loading time", "unloading duration", "cycle time"
+- "delivery distance", "site waiting time", "plant operations"
+
+**📊 Performance Notes:**
+- Large table (3.5M+ rows) - use date filters and LIMIT for performance
+- Primary key on (reg_no, plant_out) - efficient for vehicle-date queries
+- Index on tkt_no for delivery ticket lookups
+
+**🔧 AI Processing Instructions:**
+- Convert lat/lng coordinates to readable locations: "Plant Location: [City/Area]" and "Site Location: [City/Area]"
+- Show drum_in_plant as "Loading Time" 
+- Hide loading_cnt and unloading_cnt columns from user display
+- Format time durations in human-readable format (e.g., "2 hours 30 minutes")
+- For distance queries, include both individual leg distances (ps_kms, sp_kms) and total cycle_km
+- When showing speed data, include both max and average for context
 
 ### 🔐 Primary Keys
 - reg_no, plant_out
 
 ### 🔗 Foreign Keys
-- None
+- reg_no → vehicle_master.reg_no (vehicle details)
+- depo_id → hosp_master.id_no (plant information)
+- tkt_no → dpr_master.tkt_no (delivery details)
 
 ### 🧭 Indexes
 - `drum_trip_report_pkey`: CREATE UNIQUE INDEX drum_trip_report_pkey ON public.drum_trip_report USING btree (reg_no, plant_out)
