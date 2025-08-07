@@ -10,17 +10,6 @@ import datetime
 from decimal import Decimal
 from src.core.sql import get_full_schema, get_column_types, get_numeric_columns, DecimalEncoder
 
-# Enhanced JSON encoder to handle datetime and decimal objects
-class SafeJSONEncoder(DecimalEncoder):
-    def default(self, obj):
-        if isinstance(obj, (datetime.datetime, datetime.date, datetime.time, datetime.timedelta)):
-            return obj.isoformat()
-        return super().default(obj)
-
-def safe_json_dumps(obj, **kwargs):
-    """Safely serialize objects to JSON, handling datetime and Decimal objects"""
-    return json.dumps(obj, cls=SafeJSONEncoder, **kwargs)
-
 # Import embeddings functionality
 try:
     from src.nlp.create_lightweight_embeddings import LightweightEmbeddingManager
@@ -232,7 +221,7 @@ def english_to_sql(prompt, chat_context=None, session_id=None):
             if CONVERSATIONAL_AI_AVAILABLE and sentence_embedding_manager and session_id:
                 try:
                     sentence_embedding_manager.update_conversation_context_simple(
-                        session_id, prompt, safe_json_dumps(ai_result)
+                        session_id, prompt, json.dumps(ai_result)
                     )
                 except Exception as e:
                     print(f"⚠️ Failed to store follow-up interaction: {e}")
@@ -394,78 +383,6 @@ def english_to_sql(prompt, chat_context=None, session_id=None):
         
     except Exception as e:
         print(f"❌ [AI-FIRST] LLM analysis failed: {e}")
-    
-    # 🏗️ DPR (Daily Production Report) Query Detection
-    if intelligent_reasoning and intelligent_reasoning.is_dpr_related_query(prompt):
-        print(f"🏗️ [DPR] Daily Production Report query detected")
-        
-        # Extract entities for DPR context
-        entities = intelligent_reasoning.extract_entities(prompt, conversation_context)
-        
-        # Generate DPR-specific SQL
-        dpr_sql = intelligent_reasoning.generate_dpr_sql(prompt, entities)
-        
-        if dpr_sql:
-            print(f"🏗️ [DPR] Generated DPR-specific SQL")
-            
-            # Update conversational context for DPR queries
-            if session_id and sentence_embedding_manager:
-                sentence_embedding_manager.update_conversation_context(session_id, prompt, entities)
-            
-            return {
-                "sql": dpr_sql,
-                "response": "I'll get the daily production report information for you.",
-                "follow_up": "Would you like to see more details about any specific delivery or customer?",
-                "reasoning_applied": True,
-                "reasoning_type": "DPR Query Processing",
-                "entities": entities
-            }
-    
-    # 🚛 Driver Management Query Detection
-    if intelligent_reasoning and intelligent_reasoning.is_driver_related_query(prompt):
-        print(f"🚛 [DRIVER] Driver management query detected")
-        
-        # Detect specific driver query type
-        driver_query_type = intelligent_reasoning.detect_driver_query_type(prompt)
-        
-        if driver_query_type:
-            print(f"🚛 [DRIVER] Query type: {driver_query_type}")
-            
-            # Extract entities for driver context
-            entities = intelligent_reasoning.extract_entities(prompt, conversation_context)
-            
-            # Generate driver-specific SQL
-            driver_sql = intelligent_reasoning.generate_driver_sql(driver_query_type, prompt, entities)
-            
-            if driver_sql:
-                print(f"🚛 [DRIVER] Generated driver-specific SQL")
-                
-                # Create appropriate response based on query type
-                response_map = {
-                    'driver_lookup': "I'll find the driver information for you.",
-                    'license_management': "I'll check the license status and renewal information.",
-                    'plant_assignment': "I'll show you the driver assignments by plant.",
-                    'contact_info': "I'll get the driver contact information.",
-                    'demographics': "I'll analyze the driver demographic information.",
-                    'service_duration': "I'll calculate the service duration for drivers.",
-                    'uniform_management': "I'll show the uniform size distribution.",
-                    'driver_codes': "I'll find drivers by their codes."
-                }
-                
-                response = response_map.get(driver_query_type, "I'll get the driver information for you.")
-                
-                # Update conversational context for driver queries
-                if session_id and sentence_embedding_manager:
-                    sentence_embedding_manager.update_conversation_context(session_id, prompt, entities)
-                
-                return {
-                    "sql": driver_sql,
-                    "response": response,
-                    "follow_up": "Would you like to see additional driver details or analyze specific aspects?",
-                    "reasoning_applied": True,
-                    "reasoning_type": f"Driver Query Processing - {driver_query_type}",
-                    "entities": entities
-                }
     
     # 🧠 INTELLIGENT CONTEXTUAL REASONING FALLBACK
     if intelligent_reasoning and chat_context:
@@ -670,42 +587,67 @@ def generate_sql_with_llm(prompt, context_info, chat_context=None):
     else:
         plant_guidance = ""
 
-    # Build the complete LLM prompt - simplified for AI-first approach
+    # Build the complete LLM prompt
     distance_enforcement = ""
     if re.search(r'\b(distance.*report|distance|travel|drum.*rotation|kilometers?|km|metres?|meters?)\b', enhanced_prompt, re.IGNORECASE):
         distance_enforcement = """
-🚨 **SIMPLE DISTANCE QUERY ENFORCEMENT:**
+🚨 **CRITICAL ENFORCEMENT FOR DISTANCE QUERIES:**
 
-**AI-FIRST PRINCIPLE**: Generate simple raw data queries. Let Python handle ALL conversions.
+⚠️ **MANDATORY SQL REQUIREMENTS - NO EXCEPTIONS:**
 
-**SIMPLE RULES:**
-- SELECT raw columns only: `distance`, `drum_rotation`, `ps_kms`, `sp_kms`
-- NO SQL formatting functions: NO ROUND(), NO CONCAT(), NO complex CASE statements
-- NO unit conversions in SQL - Python will handle meter→km and drum→time conversions
-- Use simple aliases: `distance AS raw_distance`, `drum_rotation AS raw_drum_rotation`
+1. **DISTANCE CONVERSION IS MANDATORY:**
+   - If selecting distance column: MUST use `ROUND(distance / 1000.0, 2) as distance_km`
+   - NEVER select raw distance column without conversion
+   - NEVER show distance values in meters to users
 
-**LET PYTHON HANDLE:**
-- Distance conversions (meters to kilometers)
-- Drum rotation to time format (HH:MM)
-- All formatting and display logic
+2. **DRUM ROTATION CONVERSION IS MANDATORY:**
+   - If selecting drum_rotation: MUST use conversion formula
+   - Formula: `CONCAT(LPAD((ROUND(drum_rotation / 2.0)::integer / 60)::text, 2, '0'), ':', LPAD((ROUND(drum_rotation / 2.0)::integer % 60)::text, 2, '0')) as drum_rotation_time`
+   - NEVER select raw drum_rotation without conversion
+
+3. **VALIDATION CHECKLIST:**
+   - ✅ Distance column has `/ 1000.0` conversion?
+   - ✅ Drum rotation has `/ 2.0` and HH:MM formatting?
+   - ✅ Using aliases `distance_km` and `drum_rotation_time`?
+
+⚠️ **THESE CONVERSIONS ARE ABSOLUTELY MANDATORY - DO NOT PROCEED WITHOUT THEM**
 """
 
     full_prompt = f"""
 {SCHEMA_PROMPT}
 
-🔍 **SIMPLE DATA TYPE VERIFICATION:**
-Reference the database schema documentation at `/home/linux/Documents/chatbot-diya/docs/features/database_reference.md` for column types.
+🔍 **CRITICAL DATABASE REFERENCE REQUIREMENT:**
+BEFORE generating any SQL query, you MUST verify the actual PostgreSQL column data types by referencing the complete database schema documentation located at `/home/linux/Documents/chatbot-diya/docs/features/database_reference.md`.
 
-**AI-FIRST PRINCIPLE**: Generate simple queries that fetch raw data. Let Python handle ALL formatting.
+**MANDATORY DATA TYPE VERIFICATION:**
+1. **Duration/Time Columns**: Check if column type is `time without time zone`, `interval`, `integer`, or `timestamp`
+   - `time without time zone` → Use `TO_CHAR(column, 'HH24:MI')` for HH:MM format
+   - `interval` → Use appropriate interval formatting  
+   - `integer` (seconds) → Convert to readable format
+   - `timestamp` → Use `TO_CHAR(column, 'DD Mon YYYY HH24:MI')` for readable format
 
-**SIMPLE COLUMN HANDLING:**
-- Duration/Time Columns: SELECT raw values, Python will format
-- Distance/Numeric Columns: SELECT raw values, Python will convert units
-- Coordinate Columns: SELECT raw lat/lng values, Python will format locations
-- Text Columns: SELECT raw text, Python will handle display
+2. **Distance/Numeric Columns**: Check actual units and precision
+   - **drum_trip_report table**: `ps_kms`, `sp_kms`, `cycle_km` are ALREADY in kilometers (double precision) → Use directly: `ps_kms AS plant_site_distance_km`
+   - **distance_report table**: `distance` is in meters (integer) → Use `ROUND(distance/1000.0, 2) AS distance_km`
+   - **PostgreSQL ROUND() Fix**: For double precision columns, cast first: `ROUND(column::numeric, 2)` to avoid function errors
+   - If already in desired unit (km) → Use directly: `column AS distance_km`
+   - If needs conversion (meters to km) → Use `ROUND(column/1000.0, 2) AS distance_km`
 
-**CRITICAL**: NO ROUND(), NO CONCAT(), NO complex CASE statements in SQL.
-Let the AI intelligently understand data types and generate appropriate simple comparisons.
+3. **Coordinate Columns**: Always convert to readable location format
+   - Use CASE statements: `CASE WHEN lat IS NOT NULL THEN 'Location: ' || ROUND(lat::numeric, 4) || ',' || ROUND(lng::numeric, 4) ELSE 'Location not available' END AS readable_location`
+
+4. **Text/Character Columns**: Check for special formatting needs
+   - Apply appropriate string functions if needed
+
+**CRITICAL DRUM_TRIP_REPORT RULES**:
+- `ps_kms` (double precision) → `ps_kms AS plant_site_distance_km` (NO division by 1000)
+- `sp_kms` (double precision) → `sp_kms AS site_plant_distance_km` (NO division by 1000)  
+- `cycle_km` (double precision) → `cycle_km AS cycle_distance_km` (NO division by 1000)
+- These columns are ALREADY in kilometers - do NOT apply meter-to-km conversion!
+
+**DRUM_TRIP_REPORT COLUMN EXCLUSIONS & NAMING:**
+- **NEVER SELECT**: `unloading_time` (not needed in results)
+- **NEVER SELECT**: `depo_id` (not needed in results)
 - **NEVER SELECT**: `loading_cnt` (count data not needed)
 - **NEVER SELECT**: `unloading_cnt` (count data not needed)
 - **USE PROPER NAMING**: `drum_in_plant` → `loading_time` (this represents concrete loading time into drum)
@@ -723,17 +665,123 @@ Let the AI intelligently understand data types and generate appropriate simple c
 - `tkt_no` → ticket_number (delivery ticket reference)
 - **EXCLUDE**: unloading_time, depo_id, loading_cnt, unloading_cnt (not needed for business reporting)
 
-**AI-FIRST SIMPLE FORMATTING:**
-- Select raw columns only
-- Let Python handle all conversions and formatting
-- No complex SQL formatting functions
-- AI should intelligently handle data type mismatches by choosing appropriate comparisons
+**USER-FRIENDLY FORMATTING RULES FOR ALL NUMERIC/TIME COLUMNS:**
+
+1. **Distance Column Formatting:**
+   - For kilometers (>=1.0): `ROUND(ps_kms::numeric, 1) || ' Km'` → "5.2 Km"
+   - For meters (<1.0): `ROUND(ps_kms::numeric * 1000, 0) || ' m'` → "120 m"
+   - Combined format: `CASE WHEN ps_kms >= 1.0 THEN ROUND(ps_kms::numeric, 1) || ' Km' ELSE ROUND(ps_kms::numeric * 1000, 0) || ' m' END`
+
+2. **Time Column Formatting (for time without time zone):**
+   - Standard format: `TO_CHAR(ps_duration, 'HH24"h "MI"m "SS"s"')` → "02h 15m 30s"
+   - Hour-minute only: `TO_CHAR(ps_duration, 'HH24"h "MI"m"')` → "02h 15m"
+   - Smart format: `CASE WHEN EXTRACT(HOUR FROM ps_duration) > 0 THEN TO_CHAR(ps_duration, 'HH24"h "MI"m"') ELSE TO_CHAR(ps_duration, 'MI"m "SS"s"') END`
+
+3. **Decimal Column Formatting:**
+   - Speed: `ROUND(ps_avg_speed::numeric, 1) || ' km/h'` → "45.2 km/h"
+   - Weight: `ROUND(weight::numeric, 2) || ' tons'` → "12.50 tons"
+   - Currency: `'₹' || TO_CHAR(amount::numeric, '999,999.99')` → "₹12,345.67"
+
+4. **Count/Integer Formatting:**
+   - Large numbers: `TO_CHAR(count::integer, '999,999')` → "1,234"
+   - Percentage: `ROUND(percentage::numeric, 1) || '%'` → "87.5%"
+
+**UNIVERSAL RULE**: Never assume data types or units. Always generate SQL that matches the actual PostgreSQL column definitions found in the database_reference.md file.
+
+🚨 **CRITICAL NULL/EMPTY VALUE HANDLING - MANDATORY:**
+
+⚠️ **DATABASE CONTAINS EMPTY STRINGS AND NULL VALUES** - ALL numeric casting MUST be NULL-safe:
+
+**MANDATORY NULL-SAFE PATTERNS:**
+1. **Numeric Casting (CRITICAL)**: 
+   ```sql
+   -- ❌ NEVER USE: ROUND(column::numeric, 2)
+   -- ✅ ALWAYS USE:
+   CASE WHEN column IS NOT NULL AND column != '' AND column != '0' 
+        THEN ROUND(column::numeric, 2) 
+        ELSE 0 
+   END
+   ```
+
+2. **Coordinate Formatting (CRITICAL)**:
+   ```sql
+   -- ✅ NULL-safe coordinate handling:
+   CASE WHEN plant_lat IS NOT NULL AND plant_lat != '' AND plant_lng IS NOT NULL AND plant_lng != '' 
+        THEN 'Location: ' || ROUND(plant_lat::numeric, 4) || ',' || ROUND(plant_lng::numeric, 4)
+        ELSE 'Plant location not available' 
+   END AS plant_location
+   ```
+
+3. **Time/Duration Formatting (CRITICAL)**:
+   ```sql
+   -- ✅ NULL-safe time formatting:
+   CASE WHEN ps_duration IS NOT NULL 
+        THEN CASE WHEN EXTRACT(HOUR FROM ps_duration) > 0 
+                  THEN TO_CHAR(ps_duration, 'HH24"h "MI"m"') 
+                  ELSE TO_CHAR(ps_duration, 'MI"m "SS"s"') 
+             END
+        ELSE 'N/A' 
+   END AS plant_site_duration
+   ```
+
+4. **Special drum_in_plant Handling (CRITICAL)**:
+   ```sql
+   -- ✅ NULL-safe drum_in_plant conversion:
+   CASE WHEN drum_in_plant IS NOT NULL AND drum_in_plant != '' AND drum_in_plant != '0'
+        THEN CASE WHEN EXTRACT(HOUR FROM (drum_in_plant || ' minutes')::interval) > 0 
+                  THEN TO_CHAR((drum_in_plant || ' minutes')::interval, 'HH24"h "MI"m"')
+                  ELSE TO_CHAR((drum_in_plant || ' minutes')::interval, 'MI"m "SS"s"')
+             END
+        ELSE '00h 00m 00s'
+   END AS loading_time
+   ```
+
+5. **Speed/Distance Formatting (CRITICAL)**:
+   ```sql
+   -- ✅ NULL-safe speed formatting:
+   CASE WHEN ps_max_speed IS NOT NULL AND ps_max_speed != '' 
+        THEN ROUND(ps_max_speed::numeric, 1) || ' km/h'
+        ELSE 'N/A' 
+   END AS plant_site_max_speed
+   
+   -- ✅ NULL-safe distance formatting:
+   CASE WHEN ps_kms IS NOT NULL AND ps_kms != '' 
+        THEN CASE WHEN ps_kms >= 1.0 
+                  THEN ROUND(ps_kms::numeric, 1) || ' Km' 
+                  ELSE ROUND(ps_kms::numeric * 1000, 0) || ' m' 
+             END
+        ELSE 'N/A'
+   END AS plant_site_distance_km
+   ```
+
+⚠️ **ABSOLUTE REQUIREMENTS:**
+- **EVERY** `::numeric` cast MUST be wrapped in NULL checks
+- **EVERY** coordinate display MUST check for empty strings
+- **EVERY** time calculation MUST handle NULL values  
+- **NEVER** assume data exists - always provide fallback values
+- Use 'N/A' for missing numeric data, '00h 00m 00s' for missing time data
+
+🔥 **FAILURE TO FOLLOW THESE PATTERNS WILL CAUSE SQL ERRORS**
 
 {plant_guidance}
 
 {distance_enforcement}
 
 {context_info}
+
+🚨 **COMPREHENSIVE NULL-SAFE SQL GENERATION - MANDATORY REQUIREMENTS**
+
+⚠️ **CRITICAL: ALL queries MUST use NULL-safe patterns to prevent "invalid input syntax for type numeric: ''" errors**
+
+**1. MANDATORY NULL checks for ALL numeric casting:**
+```sql
+-- ❌ NEVER do this (will cause errors with empty strings):
+ps_kms::numeric, sp_kms::numeric, cycle_km::numeric
+
+-- ✅ ALWAYS do this (NULL-safe numeric casting):
+CASE WHEN ps_kms IS NOT NULL AND ps_kms != '' THEN ps_kms::numeric ELSE 0 END
+CASE WHEN sp_kms IS NOT NULL AND sp_kms != '' THEN sp_kms::numeric ELSE 0 END
+CASE WHEN cycle_km IS NOT NULL AND cycle_km != '' THEN cycle_km::numeric ELSE 0 END
 ```
 
 **2. MANDATORY coordinate formatting with empty string validation:**
@@ -825,17 +873,131 @@ CASE WHEN sp_kms IS NOT NULL
      ELSE 'N/A' 
 END AS site_plant_distance_km
 
+-- ✅ cycle_km formatting (DOUBLE PRECISION - only NULL check, no empty string check):
+CASE WHEN cycle_km IS NOT NULL 
+     THEN CASE WHEN cycle_km >= 1.0 
+               THEN ROUND(cycle_km, 1) || ' Km' 
+               ELSE ROUND(cycle_km * 1000, 0) || ' m' 
+          END 
+     ELSE 'N/A' 
+END AS cycle_distance_km
+```
+
+**2. MANDATORY Speed Column Formatting (NULL-safe with km/h units):**
+```sql
+-- ✅ Speed formatting patterns (DOUBLE PRECISION - only NULL check):
+CASE WHEN ps_max_speed IS NOT NULL 
+     THEN ROUND(ps_max_speed, 1) || ' km/h' 
+     ELSE 'N/A' 
+END AS plant_site_max_speed
+
+CASE WHEN ps_avg_speed IS NOT NULL 
+     THEN ROUND(ps_avg_speed, 1) || ' km/h' 
+     ELSE 'N/A' 
+END AS plant_site_avg_speed
+
+CASE WHEN sp_max_speed IS NOT NULL 
+     THEN ROUND(sp_max_speed, 1) || ' km/h' 
+     ELSE 'N/A' 
+END AS site_plant_max_speed
+
+CASE WHEN sp_avg_speed IS NOT NULL 
+     THEN ROUND(sp_avg_speed, 1) || ' km/h' 
+     ELSE 'N/A' 
+END AS site_plant_avg_speed
+```
+
+**3. MANDATORY Time/Duration Formatting (smart units):**
+```sql
+-- ✅ Duration formatting with smart units:
+CASE WHEN ps_duration IS NOT NULL 
+     THEN CASE WHEN EXTRACT(HOUR FROM ps_duration) > 0 
+               THEN TO_CHAR(ps_duration, 'HH24"h "MI"m"') 
+               ELSE TO_CHAR(ps_duration, 'MI"m "SS"s"') 
+          END 
+     ELSE 'N/A' 
+END AS plant_site_duration
+
+CASE WHEN sp_duration IS NOT NULL 
+     THEN CASE WHEN EXTRACT(HOUR FROM sp_duration) > 0 
+               THEN TO_CHAR(sp_duration, 'HH24"h "MI"m"') 
+               ELSE TO_CHAR(sp_duration, 'MI"m "SS"s"') 
+          END 
+     ELSE 'N/A' 
+END AS site_plant_duration
+
+CASE WHEN cycle_time IS NOT NULL 
+     THEN CASE WHEN EXTRACT(HOUR FROM cycle_time) > 0 
+               THEN TO_CHAR(cycle_time, 'HH24"h "MI"m"') 
+               ELSE TO_CHAR(cycle_time, 'MI"m "SS"s"') 
+          END 
+     ELSE 'N/A' 
+END AS cycle_duration
+```
+
+**4. MANDATORY drum_in_plant Special Handling:**
+```sql
+-- ✅ CRITICAL: drum_in_plant conversion to loading_time:
+CASE WHEN drum_in_plant IS NULL OR drum_in_plant = '' OR drum_in_plant = '0' 
+     THEN '00h 00m 00s' 
+     ELSE TO_CHAR((COALESCE(drum_in_plant, '0') || ' minutes')::interval, 'HH24"h "MI"m "SS"s"') 
+END AS loading_time
+
+-- ❌ NEVER select raw drum_in_plant - always convert to loading_time
+```
+
+**5. MANDATORY Location Coordinate Formatting:**
+```sql
+-- ✅ Plant location coordinates (check if TEXT or NUMERIC type first):
+'Plant: ' || CASE WHEN plant_lat IS NOT NULL THEN ROUND(plant_lat, 4) ELSE '0' END || 
+',' || CASE WHEN plant_lng IS NOT NULL THEN ROUND(plant_lng, 4) ELSE '0' END AS plant_location
+
+-- ✅ Site location coordinates (check if TEXT or NUMERIC type first):
+'Site: ' || CASE WHEN site_lat IS NOT NULL THEN ROUND(site_lat, 4) ELSE '0' END || 
+',' || CASE WHEN site_lng IS NOT NULL THEN ROUND(site_lng, 4) ELSE '0' END AS site_location
+```
+
+**6. MANDATORY Column Exclusions for drum_trip_report:**
+```sql
+-- ❌ NEVER include these columns (they're problematic or unnecessary):
+-- unloading_time, depo_id, loading_cnt, unloading_cnt
+-- Always exclude these from SELECT statements
+```
+
+**7. MANDATORY Column Alias Rules:**
+```sql
+-- ✅ Use these specific aliases for drum_trip_report:
+report_date AS trip_date
+ps_kms AS plant_site_distance_km  -- with proper formatting above
+sp_kms AS site_plant_distance_km  -- with proper formatting above
+cycle_km AS cycle_distance_km     -- with proper formatting above
+ps_max_speed AS plant_site_max_speed  -- with proper formatting above
+sp_max_speed AS site_plant_max_speed  -- with proper formatting above
+drum_in_plant -> loading_time     -- with special conversion above
+```
+
+⚠️ **CRITICAL DRUM_TRIP_REPORT RULES:**
+- ps_kms, sp_kms, cycle_km are ALREADY in kilometers - NEVER divide by 1000
+- ALWAYS convert drum_in_plant to loading_time with interval formatting
+- ALWAYS exclude: unloading_time, depo_id, loading_cnt, unloading_cnt
+- ALWAYS use NULL-safe patterns for ALL numeric columns
+- ALWAYS include proper units (Km, m, km/h, h, m, s)
+- ALWAYS provide 'N/A' fallbacks for missing data
+
+🔥 **DRUM_TRIP_REPORT QUERIES MUST FOLLOW THESE EXACT PATTERNS**
+
 You are an expert PostgreSQL query generator. Convert this natural language request into a perfect SQL query.
 
-🎯 **AI-FIRST PRINCIPLE**: Generate SIMPLE, CLEAN SQL that fetches raw data. Python will handle formatting later.
+CRITICAL: For distance_report queries, you MUST apply mandatory conversion formulas:
+- distance → ROUND(distance / 1000.0, 2) as distance_km  
+- drum_rotation → conversion to HH:MM format using the provided formula
 
-**CORE RULES:**
-- Generate simple SELECT statements with raw columns
-- NO formatting functions: NO ROUND(), NO CONCAT(), NO complex CASE statements  
-- Let AI intelligently handle PostgreSQL data type conflicts
-- Use basic aliases for readability
-- Always include LIMIT 50 for performance
-- Focus on accurate data retrieval, not presentation
+MANDATORY QUERY RULES:
+- ALWAYS add "LIMIT 50" to every SELECT query to prevent performance issues
+- Use descriptive column aliases for user-friendly display (e.g., "reg_no as registration_number", "name as plant_name")
+- CRITICAL: Format ALL datetime/timestamp columns using TO_CHAR() for user-friendly display (e.g., TO_CHAR(from_tm, 'DD Mon YYYY HH24:MI') as start_time)
+- NEVER return raw ISO datetime formats - always apply user-friendly formatting
+- Never exceed 50 rows in any single query result
 
 Context:
 {history_text}
@@ -877,9 +1039,68 @@ Generate a JSON response with this exact structure:
                 result['sql'] = sql
                 # Don't add technical messages to user response
         
-        # ✅ AI-FIRST APPROACH: All formatting now handled by comprehensive LLM prompt
+        # ✅ AI-FIRST APPROACH: All drum_trip_report patterns now handled by comprehensive LLM prompt
         # Previous complex regex patterns have been replaced with AI-first approach
-        # The LLM now generates properly formatted SQL from the beginning
+        # The LLM now generates NULL-safe, properly formatted SQL from the beginning
+        
+        # 🎨 UNIVERSAL: Apply user-friendly formatting for all numeric/time columns
+        if result and result.get('sql'):
+            sql = result['sql']
+            
+            # Generic formatting patterns for any table (NULL-safe)
+            universal_formatting = [
+                # Generic distance columns (already in km) - NULL-safe
+                (r'(\w+_kms?) AS (\w+)', 
+                 r'CASE WHEN \1 IS NOT NULL AND \1 != \'\' THEN CASE WHEN \1 >= 1.0 THEN ROUND(\1::numeric, 1) || \' Km\' ELSE ROUND(\1::numeric * 1000, 0) || \' m\' END ELSE \'N/A\' END AS \2'),
+                (r'(\w+_distance) AS (\w+)', 
+                 r'CASE WHEN \1 IS NOT NULL AND \1 != \'\' THEN CASE WHEN \1 >= 1.0 THEN ROUND(\1::numeric, 1) || \' Km\' ELSE ROUND(\1::numeric * 1000, 0) || \' m\' END ELSE \'N/A\' END AS \2'),
+                
+                # Generic speed columns (NULL-safe)
+                (r'(\w+_speed) AS (\w+)', 
+                 r'CASE WHEN \1 IS NOT NULL AND \1 != \'\' THEN ROUND(\1::numeric, 1) || \' km/h\' ELSE \'N/A\' END AS \2'),
+                (r'(\w+_velocity) AS (\w+)', 
+                 r'CASE WHEN \1 IS NOT NULL AND \1 != \'\' THEN ROUND(\1::numeric, 1) || \' km/h\' ELSE \'N/A\' END AS \2'),
+                
+                # Generic time columns (HH:MM format to readable) - NULL-safe
+                (r"TO_CHAR\((\w+_time), 'HH24:MI'\)", 
+                 r'CASE WHEN \1 IS NOT NULL THEN CASE WHEN EXTRACT(HOUR FROM \1) > 0 THEN TO_CHAR(\1, \'HH24"h "MI"m"\') ELSE TO_CHAR(\1, \'MI"m "SS"s"\') END ELSE \'N/A\' END'),
+                (r"TO_CHAR\((\w+_duration), 'HH24:MI'\)", 
+                 r'CASE WHEN \1 IS NOT NULL THEN CASE WHEN EXTRACT(HOUR FROM \1) > 0 THEN TO_CHAR(\1, \'HH24"h "MI"m"\') ELSE TO_CHAR(\1, \'MI"m "SS"s"\') END ELSE \'N/A\' END'),
+                
+                # Generic fuel columns (NULL-safe)
+                (r'(\w+_fuel\w*) AS (\w+)', 
+                 r'CASE WHEN \1 IS NOT NULL AND \1 != \'\' THEN ROUND(\1::numeric, 2) || \' L\' ELSE \'N/A\' END AS \2'),
+                (r'(\w+_consumption) AS (\w+)', 
+                 r'CASE WHEN \1 IS NOT NULL AND \1 != \'\' THEN ROUND(\1::numeric, 2) || \' L\' ELSE \'N/A\' END AS \2'),
+                
+                # Generic weight/load columns (NULL-safe)
+                (r'(\w+_weight) AS (\w+)', 
+                 r'CASE WHEN \1 IS NOT NULL AND \1 != \'\' THEN ROUND(\1::numeric, 2) || \' kg\' ELSE \'N/A\' END AS \2'),
+                (r'(\w+_load) AS (\w+)', 
+                 r'CASE WHEN \1 IS NOT NULL AND \1 != \'\' THEN ROUND(\1::numeric, 2) || \' kg\' ELSE \'N/A\' END AS \2'),
+                
+                # Generic count columns with comma formatting (counts should never be NULL)
+                (r'COUNT\(\*\) AS (\w+)', 
+                 r'TO_CHAR(COUNT(*), \'999,999\') AS \1'),
+                (r'SUM\(([^)]+)\) AS (\w+)', 
+                 r'TO_CHAR(COALESCE(SUM(\1), 0), \'999,999.99\') AS \2'),
+                
+                # Generic percentage columns (NULL-safe)
+                (r'(\w+_percent\w*) AS (\w+)', 
+                 r'CASE WHEN \1 IS NOT NULL AND \1 != \'\' THEN ROUND(\1::numeric, 1) || \'%\' ELSE \'N/A\' END AS \2'),
+                (r'(\w+_efficiency) AS (\w+)', 
+                 r'CASE WHEN \1 IS NOT NULL AND \1 != \'\' THEN ROUND(\1::numeric, 1) || \'%\' ELSE \'N/A\' END AS \2')
+            ]
+            
+            formatting_applied = False
+            for pattern, replacement in universal_formatting:
+                if re.search(pattern, sql, re.IGNORECASE):
+                    sql = re.sub(pattern, replacement, sql, flags=re.IGNORECASE)
+                    formatting_applied = True
+                    print(f"🎨 Applied universal formatting: {pattern}")
+            
+            if formatting_applied:
+                result['sql'] = sql
         
         # 🚨 CRITICAL: Ensure LIMIT 50 is always applied
         if result and result.get('sql'):
@@ -902,66 +1123,73 @@ Generate a JSON response with this exact structure:
 
 def generate_simple_drum_trip_sql(prompt, context_info, chat_context=None):
     """
-    🚀 AI-FIRST APPROACH: Generate clean SQL for drum_trip_report
-    Let the LLM handle all the complexity through intelligent prompting
+    🚀 TWO-STAGE APPROACH - Stage 1: Generate simple, raw SQL for drum_trip_report
+    Avoids complex formatting in SQL to prevent PostgreSQL errors
     """
     
-    # Check for simple, direct queries that should be ultra-simple
-    prompt_lower = prompt.lower()
-    
-    # If it's a simple loading time query for a specific vehicle, generate ultra-simple SQL
-    if 'loading time for' in prompt_lower:
-        # Extract vehicle registration if possible
-        import re
-        vehicle_match = re.search(r'([A-Z]{2}\d{2}[A-Z]\d{4})', prompt, re.IGNORECASE)
-        if vehicle_match:
-            vehicle = vehicle_match.group(1).upper()
-            return {
-                "sql": f"SELECT reg_no, drum_in_plant FROM public.drum_trip_report WHERE reg_no = '{vehicle}' LIMIT 10;",
-                "response": f"Fetching loading time for vehicle {vehicle}",
-                "table_type": "drum_trip_report",
-                "requires_formatting": True
-            }
-    
-    # Build AI-first prompt - let LLM handle all formatting logic
-    ai_prompt = f"""
-You are a PostgreSQL expert specializing in drum_trip_report queries.
+    # Build simplified prompt for raw data fetching
+    simple_prompt = f"""
+You are a PostgreSQL expert. Generate SIMPLE, RAW SQL queries for drum_trip_report table.
 
-**TABLE: drum_trip_report (Transit Mixer Concrete Delivery Data)**
+🎯 **CORE PRINCIPLE**: Keep SQL simple - fetch raw data only!
 
-🎯 **AI-FIRST PRINCIPLE**: Generate SIMPLE, CLEAN SQL that fetches raw data. Python will handle formatting later.
+❌ **AVOID IN SQL**:
+- Complex CASE statements for formatting
+- ROUND() functions (causes "function does not exist" errors)
+- TO_CHAR() for display formatting  
+- Concatenation for display purposes
+- Complex NULL handling patterns
 
-**COLUMN UNDERSTANDING:**
-- reg_no: Vehicle registration number  
-- plant_out/site_in/site_out/plant_in: Delivery cycle timestamps
-- ps_kms/sp_kms/cycle_km: Distances in kilometers (double precision)
-- ps_duration/sp_duration/cycle_time: Time durations
-- drum_in_plant: Loading time 
-- plant_lat/plant_lng/site_lat/site_lng: Coordinates
-- unloading_duration/site_waiting: Operation times
-- tkt_no: Delivery ticket number
+✅ **GENERATE SIMPLE SQL**:
+```sql
+-- ✅ Simple approach for drum_trip_report:
+SELECT 
+  reg_no,
+  plant_out,
+  site_in,
+  site_out, 
+  plant_in,
+  ps_duration,
+  sp_duration,
+  cycle_time,
+  ps_kms,
+  sp_kms, 
+  cycle_km,
+  ps_max_speed,
+  ps_avg_speed,
+  sp_max_speed,
+  sp_avg_speed,
+  plant_lat,
+  plant_lng,
+  site_lat,
+  site_lng,
+  unloading_duration,
+  site_waiting,
+  drum_in_plant,
+  tkt_no
+FROM public.drum_trip_report
+LIMIT 50;
+```
 
-**CRITICAL RULES:**
-1. Generate SIMPLE SQL - just SELECT the raw columns needed
-2. NO formatting functions AT ALL - no ROUND(), no TRUNC(), no COALESCE for display
-3. NO complex formatting in SQL - Python handles ALL formatting  
-4. Always include LIMIT for performance
-5. Use meaningful column aliases for display
-6. Fetch RAW data only - let Python and LLM do ALL the formatting work
-
-**ABSOLUTELY FORBIDDEN FUNCTIONS:** TRUNC(), ROUND(), COALESCE for display, CASE for formatting, coordinate conversion in SQL, string concatenation for units
+⚠️ **CRITICAL RULES**:
+1. **NO FORMATTING** - Raw values only
+2. **NO COMPLEX CASE** - Simple column selection
+3. **NO ROUND()** - Causes PostgreSQL errors
+4. **NO TO_CHAR()** - Raw timestamps are fine
+5. **ALWAYS LIMIT 50** - Performance requirement
 
 User Request: {prompt}
 
 Generate a JSON response:
 {{
-    "sql": "SELECT ... (simple, clean SQL with basic aliases)",
-    "response": "Brief explanation"
+    "sql": "SELECT ... (simple raw SQL only)",
+    "response": "Brief explanation",
+    "requires_formatting": true
 }}
 """
     
     try:
-        response = model.generate_content(ai_prompt).text
+        response = model.generate_content(simple_prompt).text
         result = extract_json(response)
         
         # Ensure LIMIT is present
@@ -1007,31 +1235,229 @@ def format_raw_results(raw_results, table_type):
 
 def format_drum_trip_results(raw_results):
     """
-    🚀 AI-FIRST APPROACH: Simple, clean formatting for drum trip results
-    Trust the LLM to handle complex formatting in SQL - just do basic business logic here
+    🎨 AI-FIRST APPROACH: Format drum_trip_report raw results with user-friendly display
+    Following the AI-first formatting guidelines from database_reference.md
     """
-    if not raw_results:
-        return "No drum trip data found."
-    
     formatted_results = []
+    
     for row in raw_results:
-        result = {}
-        for column, value in row.items():
-            # Simple NULL handling
-            if value is None:
-                result[column] = "Not available"
-            # Handle key drum trip columns with business-friendly names
-            elif column == 'drum_in_plant':
-                result['Loading Time'] = f"{value} minutes" if isinstance(value, (int, float)) else str(value)
-            elif column == 'reg_no':
-                result['Vehicle'] = str(value)
-            elif 'kms' in column.lower() or '_km' in column.lower():
-                result[column] = f"{value} km" if isinstance(value, (int, float)) else str(value)
-            elif 'duration' in column.lower() or 'time' in column.lower():
-                result[column] = f"{value} mins" if isinstance(value, (int, float)) else str(value)
+        formatted_row = {}
+        
+        # Vehicle registration
+        if 'reg_no' in row:
+            formatted_row['Registration Number'] = row['reg_no'] or 'N/A'
+        
+        # Format timestamps (DD-MM-YYYY HH:MM format) with enhanced site_in handling
+        for ts_col, display_name in [
+            ('plant_out', 'Plant Departure'),
+            ('site_in', 'Site Arrival'),
+            ('site_out', 'Site Departure'),
+            ('plant_in', 'Plant Return')
+        ]:
+            if ts_col in row and row[ts_col]:
+                try:
+                    if isinstance(row[ts_col], str):
+                        # Enhanced parsing for different timestamp formats
+                        from datetime import datetime
+                        # Handle various timestamp formats
+                        timestamp_str = row[ts_col].strip()
+                        if 'T' in timestamp_str:
+                            # ISO format: 2025-08-01T14:30:00Z or 2025-08-01T14:30:00+05:30
+                            dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                        else:
+                            # Other formats: 2025-08-01 14:30:00
+                            dt = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
+                        formatted_row[display_name] = dt.strftime('%d-%m-%Y %H:%M')
+                    elif hasattr(row[ts_col], 'strftime'):
+                        # Handle datetime objects directly
+                        formatted_row[display_name] = row[ts_col].strftime('%d-%m-%Y %H:%M')
+                    else:
+                        # Fallback for other types
+                        formatted_row[display_name] = str(row[ts_col])
+                except Exception as e:
+                    # Better error handling - try to extract readable info
+                    try:
+                        raw_value = str(row[ts_col])
+                        # Try to extract date parts if possible
+                        if len(raw_value) >= 10:
+                            formatted_row[display_name] = raw_value[:19]  # Keep YYYY-MM-DD HH:MM:SS part
+                        else:
+                            formatted_row[display_name] = raw_value
+                    except:
+                        formatted_row[display_name] = 'Invalid Date'
             else:
-                result[column] = str(value)
-        formatted_results.append(result)
+                formatted_row[display_name] = 'N/A'
+        
+        # Format distances with units (2 decimal places + " km")
+        for dist_col, display_name in [
+            ('ps_kms', 'Plant to Site Distance'),
+            ('sp_kms', 'Site to Plant Distance'),
+            ('cycle_km', 'Total Trip Distance')
+        ]:
+            if dist_col in row and row[dist_col] is not None:
+                try:
+                    distance = float(row[dist_col])
+                    formatted_row[display_name] = f"{distance:.2f} km"
+                except:
+                    formatted_row[display_name] = 'N/A'
+            else:
+                formatted_row[display_name] = 'N/A'
+        
+        # Format speeds with units (1 decimal place + " km/h")
+        for speed_col, display_name in [
+            ('ps_max_speed', 'Plant to Site Max Speed'),
+            ('ps_avg_speed', 'Plant to Site Avg Speed'),
+            ('sp_max_speed', 'Site to Plant Max Speed'),
+            ('sp_avg_speed', 'Site to Plant Avg Speed')
+        ]:
+            if speed_col in row and row[speed_col] is not None:
+                try:
+                    speed = float(row[speed_col])
+                    formatted_row[display_name] = f"{speed:.1f} km/h"
+                except:
+                    formatted_row[display_name] = 'N/A'
+            else:
+                formatted_row[display_name] = 'N/A'
+        
+        # Format durations ("Xh Ym" or "Ym" format)
+        for duration_col, display_name in [
+            ('ps_duration', 'Plant to Site Duration'),
+            ('sp_duration', 'Site to Plant Duration'),
+            ('cycle_time', 'Total Trip Time'),
+            ('unloading_duration', 'Unloading Time'),
+            ('site_waiting', 'Site Waiting Time')
+        ]:
+            if duration_col in row and row[duration_col] is not None:
+                try:
+                    # Handle different duration formats
+                    duration_str = str(row[duration_col])
+                    if ':' in duration_str:
+                        # HH:MM:SS format
+                        parts = duration_str.split(':')
+                        if len(parts) >= 2:
+                            hours = int(parts[0])
+                            minutes = int(parts[1])
+                            if hours > 0:
+                                formatted_row[display_name] = f"{hours}h {minutes}m"
+                            else:
+                                formatted_row[display_name] = f"{minutes}m"
+                        else:
+                            formatted_row[display_name] = duration_str
+                    else:
+                        # Assume minutes
+                        try:
+                            total_minutes = float(duration_str)
+                            hours = int(total_minutes // 60)
+                            minutes = int(total_minutes % 60)
+                            if hours > 0:
+                                formatted_row[display_name] = f"{hours}h {minutes}m"
+                            else:
+                                formatted_row[display_name] = f"{minutes}m"
+                        except:
+                            formatted_row[display_name] = duration_str
+                except:
+                    formatted_row[display_name] = 'N/A'
+            else:
+                formatted_row[display_name] = 'N/A'
+        
+        # Format coordinates as readable locations (hide raw lat/lng)
+        if 'plant_lat' in row and 'plant_lng' in row:
+            if row['plant_lat'] is not None and row['plant_lng'] is not None:
+                try:
+                    lat = float(row['plant_lat'])
+                    lng = float(row['plant_lng'])
+                    formatted_row['Plant Location'] = f"Lat: {lat:.4f}, Lng: {lng:.4f}"
+                except:
+                    formatted_row['Plant Location'] = "Location not available"
+            else:
+                formatted_row['Plant Location'] = "Location not available"
+        
+        if 'site_lat' in row and 'site_lng' in row:
+            if row['site_lat'] is not None and row['site_lng'] is not None:
+                try:
+                    lat = float(row['site_lat'])
+                    lng = float(row['site_lng'])
+                    formatted_row['Site Location'] = f"Lat: {lat:.4f}, Lng: {lng:.4f}"
+                except:
+                    formatted_row['Site Location'] = "Location not available"
+            else:
+                formatted_row['Site Location'] = "Location not available"
+        
+        # Enhanced handling for drum_in_plant -> Loading Time
+        if 'drum_in_plant' in row:
+            try:
+                # Handle various data types and formats for drum_in_plant
+                raw_value = row['drum_in_plant']
+                
+                if raw_value is None or raw_value == '' or str(raw_value).strip() == '0' or str(raw_value).strip() == '0.0':
+                    formatted_row['Loading Time'] = 'N/A'
+                else:
+                    # Convert to minutes (handle different input formats)
+                    if isinstance(raw_value, str):
+                        # Handle string inputs
+                        if ':' in raw_value:
+                            # Handle HH:MM:SS format
+                            time_parts = raw_value.split(':')
+                            hours = int(time_parts[0]) if len(time_parts) > 0 else 0
+                            minutes = int(time_parts[1]) if len(time_parts) > 1 else 0
+                            seconds = int(time_parts[2]) if len(time_parts) > 2 else 0
+                            total_minutes = hours * 60 + minutes + (seconds / 60)
+                        else:
+                            # Assume it's minutes as string
+                            total_minutes = float(raw_value.strip())
+                    else:
+                        # Handle numeric inputs (assume minutes)
+                        total_minutes = float(raw_value)
+                    
+                    # Format as "Xh Ym" or "Ym" based on your requirements
+                    if total_minutes >= 60:
+                        hours = int(total_minutes // 60)
+                        remaining_minutes = int(total_minutes % 60)
+                        if remaining_minutes > 0:
+                            formatted_row['Loading Time'] = f"{hours}h {remaining_minutes}m"
+                        else:
+                            formatted_row['Loading Time'] = f"{hours}h"
+                    elif total_minutes > 0:
+                        formatted_row['Loading Time'] = f"{int(total_minutes)}m"
+                    else:
+                        formatted_row['Loading Time'] = 'N/A'
+                        
+            except Exception as e:
+                # Enhanced error handling
+                try:
+                    # Try to extract any numeric value as a fallback
+                    import re
+                    raw_str = str(row['drum_in_plant'])
+                    numbers = re.findall(r'\d+\.?\d*', raw_str)
+                    if numbers:
+                        minutes = int(float(numbers[0]))
+                        if minutes > 0:
+                            if minutes >= 60:
+                                hours = minutes // 60
+                                remaining_minutes = minutes % 60
+                                formatted_row['Loading Time'] = f"{hours}h {remaining_minutes}m" if remaining_minutes > 0 else f"{hours}h"
+                            else:
+                                formatted_row['Loading Time'] = f"{minutes}m"
+                        else:
+                            formatted_row['Loading Time'] = 'N/A'
+                    else:
+                        formatted_row['Loading Time'] = 'N/A'
+                except:
+                    formatted_row['Loading Time'] = 'N/A'
+        else:
+            formatted_row['Loading Time'] = 'N/A'
+        
+        # Format ticket number
+        if 'tkt_no' in row:
+            if row['tkt_no'] is not None and row['tkt_no'] != 0:
+                formatted_row['Ticket Number'] = str(row['tkt_no'])
+            else:
+                formatted_row['Ticket Number'] = 'N/A'
+        
+        # Skip loading_cnt and unloading_cnt as per requirements
+        # These are not included in the formatted output
+        
+        formatted_results.append(formatted_row)
     
     return formatted_results
 
@@ -1218,33 +1644,107 @@ Current query context analysis:
 
 🎯 **AI-ENHANCED STOPPAGE QUERY PATTERNS:**
 
-**SIMPLE STOPPAGE QUERIES (Let AI be intelligent about data types):**
+**BASIC STOPPAGE QUERIES (Always include location context):**
 - "Show stoppage report" → 
   ```sql
-  SELECT ur.reg_no, ur.from_tm, ur.to_tm, ur.duration, ur.location, hm.name as plant_name
+  SELECT ur.reg_no as vehicle_registration, 
+         ur.from_tm as stop_start_time, 
+         ur.to_tm as stop_end_time,
+         ur.duration as stop_duration,
+         CASE 
+           WHEN ur.location IS NOT NULL THEN 'Location: ' || ur.location
+           WHEN ur.lat IS NOT NULL AND ur.long IS NOT NULL THEN 'Coordinates: ' || ur.lat || ',' || ur.long
+           ELSE 'Location not available' 
+         END as stop_location,
+         hm.name as assigned_plant
   FROM public.util_report ur
   LEFT JOIN public.hosp_master hm ON ur.depo_id = hm.id_no
   WHERE (ur.report_type = 'stoppage' OR ur.report_type IS NULL)
   ORDER BY ur.from_tm DESC LIMIT 50
   ```
 
-**VEHICLE-SPECIFIC STOPPAGE:**
-- "Vehicle stoppage details" → 
+**VEHICLE-SPECIFIC STOPPAGE (when vehicle mentioned):**
+- "Vehicle WB38C2023 stoppage details" → 
   ```sql
-  SELECT ur.reg_no, ur.from_tm, ur.to_tm, ur.duration, ur.location, hm.name as plant_name
+  SELECT ur.reg_no as vehicle_registration,
+         ur.from_tm as stop_start_time,
+         ur.to_tm as stop_end_time, 
+         ur.duration as stop_duration,
+         CASE 
+           WHEN ur.location IS NOT NULL THEN 'Location: ' || ur.location
+           ELSE 'Location: ' || COALESCE(ur.lat::text || ',' || ur.long::text, 'Not available')
+         END as stop_location,
+         hm.name as assigned_plant,
+         dm.name as region
   FROM public.util_report ur
   LEFT JOIN public.hosp_master hm ON ur.depo_id = hm.id_no
-  WHERE ur.reg_no ILIKE '%VEHICLE_REG%' 
+  LEFT JOIN public.district_master dm ON hm.id_dist = dm.id_no
+  WHERE ur.reg_no ILIKE '%WB38C2023%' 
     AND (ur.report_type = 'stoppage' OR ur.report_type IS NULL)
   ORDER BY ur.from_tm DESC LIMIT 50
   ```
 
-**BASIC PATTERNS (Let AI handle complexity intelligently):**
-- Always use simple SELECT with raw columns
-- Let Python handle all formatting and data type conversions
-- AI should be smart about numeric vs text column handling
-- Use appropriate WHERE conditions based on data types
-- Join with hierarchy tables when needed for context
+**DURATION-BASED ANALYSIS (when duration/time mentioned):**
+- "Long stoppages" or "Extended stops" → 
+  ```sql
+  SELECT ur.reg_no as vehicle_registration,
+         ur.from_tm as stop_start_time,
+         ur.duration as stop_duration,
+         CASE 
+           WHEN EXTRACT(EPOCH FROM ur.duration) > 7200 THEN 'Extended (>2 hours)'
+           WHEN EXTRACT(EPOCH FROM ur.duration) > 1800 THEN 'Long (30min-2hours)'
+           ELSE 'Short (<30 minutes)'
+         END as duration_category,
+         CASE 
+           WHEN ur.location IS NOT NULL THEN ur.location
+           ELSE ur.lat::text || ',' || ur.long::text
+         END as stop_location,
+         hm.name as assigned_plant
+  FROM public.util_report ur
+  LEFT JOIN public.hosp_master hm ON ur.depo_id = hm.id_no
+  WHERE (ur.report_type = 'stoppage' OR ur.report_type IS NULL)
+    AND ur.duration IS NOT NULL
+  ORDER BY ur.duration DESC LIMIT 50
+  ```
+
+**TIME-FILTERED STOPPAGE (when date/time mentioned):**
+- "Stoppage report for July 2025" → 
+  ```sql
+  SELECT ur.reg_no as vehicle_registration,
+         DATE(ur.from_tm) as stop_date,
+         ur.from_tm as stop_start_time,
+         ur.to_tm as stop_end_time,
+         ur.duration as stop_duration,
+         CASE 
+           WHEN ur.location IS NOT NULL THEN ur.location
+           ELSE COALESCE(ur.lat::text || ',' || ur.long::text, 'Location not available')
+         END as stop_location
+  FROM public.util_report ur
+  WHERE EXTRACT(MONTH FROM ur.from_tm) = 7 
+    AND EXTRACT(YEAR FROM ur.from_tm) = 2025
+    AND (ur.report_type = 'stoppage' OR ur.report_type IS NULL)
+  ORDER BY ur.from_tm DESC LIMIT 50
+  ```
+
+**PLANT/REGION-BASED STOPPAGE (when plant/region mentioned):**
+- "Plant-wise stoppage analysis" → 
+  ```sql
+  SELECT ur.reg_no as vehicle_registration,
+         hm.name as plant_name,
+         dm.name as region_name,
+         zm.name as zone_name,
+         COUNT(*) as total_stops,
+         AVG(EXTRACT(EPOCH FROM ur.duration)/60) as avg_stop_minutes,
+         MAX(ur.duration) as longest_stop
+  FROM public.util_report ur
+  JOIN public.hosp_master hm ON ur.depo_id = hm.id_no
+  JOIN public.district_master dm ON hm.id_dist = dm.id_no  
+  JOIN public.zone_master zm ON dm.id_zone = zm.id_no
+  WHERE (ur.report_type = 'stoppage' OR ur.report_type IS NULL)
+    AND ur.duration IS NOT NULL
+  GROUP BY ur.reg_no, hm.name, dm.name, zm.name
+  ORDER BY total_stops DESC LIMIT 50
+  ```
 
 📍 **AI-ENHANCED LOCATION HANDLING:**
 ⚠️ **CRITICAL USER EXPERIENCE RULE**: NEVER show raw coordinates to end users
@@ -1293,57 +1793,132 @@ Current query context analysis:
 
 🔧 **CRITICAL CONVERSION FORMULAS:**
 
-1. **DISTANCE CONVERSION (DONE IN PYTHON):**
+1. **DISTANCE CONVERSION (MANDATORY):**
    - Database stores distance in METERS
-   - Python will convert to KM: distance / 1000.0
-   - Example: 5000 meters → Python converts to 5.00 KM
+   - ALWAYS convert to KM: `ROUND(distance / 1000.0, 2) as distance_km`
+   - Example: 5000 meters → 5.00 KM
 
-2. **DRUM ROTATION CONVERSION (DONE IN PYTHON):**
-   - Raw value divided by 2 in Python: drum_rotation / 2
-   - Result converted to HH:MM format in Python
-   - Example: drum_rotation = 150 → Python: 150/2 = 75 minutes → "01:15"
+2. **DRUM ROTATION CONVERSION (MANDATORY):**
+   - Raw value must be divided by 2: `drum_rotation / 2`
+   - Result is in MINUTES, convert to HH:MM format
+   - Formula: `CONCAT(LPAD((ROUND(drum_rotation / 2.0)::integer / 60)::text, 2, '0'), ':', LPAD((ROUND(drum_rotation / 2.0)::integer % 60)::text, 2, '0')) as drum_rotation_hhmm`
+   - Example: drum_rotation = 150 → 150/2 = 75 minutes → "01:15"
 
 🎯 **DISTANCE REPORT QUERY PATTERNS:**
 
-**SIMPLE DISTANCE QUERIES (Let AI handle data types intelligently):**
+**BASIC DISTANCE QUERIES:**
 - "Show distance report" → 
   ```sql
-  SELECT reg_no, from_tm, to_tm, distance, drum_rotation
+  SELECT reg_no as registration_number, from_tm as start_time, to_tm as end_time, 
+         ROUND(distance / 1000.0, 2) as distance_km,
+         CONCAT(LPAD((ROUND(drum_rotation / 2.0)::integer / 60)::text, 2, '0'), ':', 
+                LPAD((ROUND(drum_rotation / 2.0)::integer % 60)::text, 2, '0')) as drum_rotation_time
   FROM public.distance_report LIMIT 50
   ```
 
 - "Distance report for vehicle X" → 
   ```sql
-  SELECT reg_no, from_tm, to_tm, distance, drum_rotation
+  SELECT reg_no as registration_number, from_tm as start_time, to_tm as end_time, 
+         ROUND(distance / 1000.0, 2) as distance_km,
+         CONCAT(LPAD((ROUND(drum_rotation / 2.0)::integer / 60)::text, 2, '0'), ':', 
+                LPAD((ROUND(drum_rotation / 2.0)::integer % 60)::text, 2, '0')) as drum_rotation_time
   FROM public.distance_report 
   WHERE reg_no ILIKE 'X' 
   ORDER BY from_tm LIMIT 50
   ```
 
-**PLANT HIERARCHY JOINS (Simple patterns):**
-- "Distance with plant info" → 
+- "Total distance traveled" → 
   ```sql
-  SELECT dr.reg_no, hm.name as plant_name, dr.distance, dr.drum_rotation
+  SELECT reg_no as registration_number, 
+         SUM(ROUND(distance / 1000.0, 2)) as total_distance_km
+  FROM public.distance_report 
+  GROUP BY reg_no 
+  ORDER BY total_distance_km DESC LIMIT 50
+  ```
+
+**PLANT-TO-PLANT DISTANCE ANALYSIS:**
+- "Distance between plants" → 
+  ```sql
+  SELECT dr.reg_no as registration_number, 
+         hm.name as plant_name,
+         ROUND(dr.distance / 1000.0, 2) as distance_km,
+         CONCAT(LPAD((ROUND(dr.drum_rotation / 2.0)::integer / 60)::text, 2, '0'), ':', 
+                LPAD((ROUND(dr.drum_rotation / 2.0)::integer % 60)::text, 2, '0')) as drum_rotation_time
   FROM public.distance_report dr 
   JOIN public.vehicle_master vm ON dr.reg_no = vm.reg_no
   JOIN public.hosp_master hm ON vm.id_hosp = hm.id_no LIMIT 50
   ```
 
-**KEY PRINCIPLES:**
-- Use simple SELECT with raw columns only
-- Let Python handle all conversions (meters→KM, drum_rotation→HH:MM)
-- AI should intelligently choose appropriate data type handling
-- No complex CASE statements or formatting functions in SQL
-- Focus on data retrieval, not presentation
+- "Inter-plant vehicle travel" → 
+  ```sql
+  SELECT dr.reg_no as registration_number, 
+         hm.name as vehicle_plant,
+         dm.name as region,
+         ROUND(dr.distance / 1000.0, 2) as distance_km,
+         dr.from_tm as start_time, dr.to_tm as end_time
+  FROM public.distance_report dr 
+  JOIN public.vehicle_master vm ON dr.reg_no = vm.reg_no
+  JOIN public.hosp_master hm ON vm.id_hosp = hm.id_no
+  JOIN public.district_master dm ON hm.id_dist = dm.id_no LIMIT 50
+  ```
 
-⚠️ **MANDATORY CONVERSION RULES (DONE IN PYTHON, NOT SQL):**
-1. **Distance conversion in Python**: Raw meters → KM with rounding
-2. **Drum rotation conversion in Python**: Raw value / 2 → HH:MM format
-3. **NEVER do conversions in SQL** - fetch raw data only
-4. **NEVER show raw distance values in meters to users** - Python converts to KM
-5. **NEVER show raw drum_rotation values to users** - Python converts to HH:MM
+**TIME-BASED DISTANCE ANALYSIS:**
+- "Daily distance report" → 
+  ```sql
+  SELECT DATE(from_tm) as travel_date,
+         COUNT(*) as trips,
+         SUM(ROUND(distance / 1000.0, 2)) as total_km
+  FROM public.distance_report 
+  GROUP BY DATE(from_tm) 
+  ORDER BY travel_date
+  ```
+
+- "Monthly vehicle distance" → 
+  ```sql
+  SELECT reg_no,
+         EXTRACT(YEAR FROM from_tm) as year,
+         EXTRACT(MONTH FROM from_tm) as month,
+         SUM(ROUND(distance / 1000.0, 2)) as monthly_km
+  FROM public.distance_report 
+  GROUP BY reg_no, EXTRACT(YEAR FROM from_tm), EXTRACT(MONTH FROM from_tm)
+  ORDER BY year, month, monthly_km DESC
+  ```
+
+🏭 **VEHICLE HIERARCHY WITH DISTANCE:**
+- "Distance by plant" → 
+  ```sql
+  SELECT hm.name as plant_name,
+         COUNT(*) as trips,
+         SUM(ROUND(dr.distance / 1000.0, 2)) as total_distance_km
+  FROM public.distance_report dr 
+  JOIN public.vehicle_master vm ON dr.reg_no = vm.reg_no
+  JOIN public.hosp_master hm ON vm.id_hosp = hm.id_no
+  GROUP BY hm.name
+  ORDER BY total_distance_km DESC
+  ```
+
+- "Regional distance analysis" → 
+  ```sql
+  SELECT dm.name as region,
+         hm.name as plant,
+         COUNT(*) as trips,
+         SUM(ROUND(dr.distance / 1000.0, 2)) as total_km,
+         AVG(ROUND(dr.distance / 1000.0, 2)) as avg_km_per_trip
+  FROM public.distance_report dr 
+  JOIN public.vehicle_master vm ON dr.reg_no = vm.reg_no
+  JOIN public.hosp_master hm ON vm.id_hosp = hm.id_no
+  JOIN public.district_master dm ON hm.id_dist = dm.id_no
+  GROUP BY dm.name, hm.name
+  ORDER BY total_km DESC
+  ```
+
+⚠️ **MANDATORY CONVERSION RULES:**
+1. **ALWAYS convert distance from meters to KM**: `ROUND(distance / 1000.0, 2)`
+2. **ALWAYS convert drum_rotation**: `drum_rotation / 2` then to HH:MM format
+3. **NEVER show raw distance values in meters to users**
+4. **NEVER show raw drum_rotation values to users**
+5. **ALWAYS format time as HH:MM for drum rotation display**
 6. **Use JOIN with vehicle_master → hosp_master → district_master for hierarchy**
-7. **SQL fetches raw data, Python handles all user-friendly formatting**
 
 🎯 **DISTANCE REPORT CONTEXT UNDERSTANDING:**
 - "Distance report" = distance_report table with conversions
@@ -1801,19 +2376,6 @@ If the user asks a question that appears to follow from a previous result, list,
 
 ❗ Strict instructions:
 
-🚀 **AI-FIRST CORE PRINCIPLE**: Generate SIMPLE, CLEAN SQL queries that fetch RAW data ONLY. Let Python handle ALL formatting, coordinate conversion, and business logic. 
-
-**SIMPLICITY RULES:**
-- NO formatting functions in SQL AT ALL - no ROUND(), no TRUNC(), no COALESCE for display
-- NO complex CASE statements or formatting in SQL
-- NO coordinate-to-location conversion in SQL
-- NO string concatenation with || for display units in SQL
-- NO mathematical operations for display formatting
-- Keep SQL focused ONLY on data retrieval, not presentation
-- Let Python formatting handle ALL units, labels, rounding, and business display logic
-
-**ABSOLUTELY FORBIDDEN FUNCTIONS IN SQL:** TRUNC(), ROUND(), COALESCE for display, complex CASE WHEN for display, coordinate conversion, string concatenation for units
-
 - **Do not return actual DB results.**
 - **Return only a valid JSON object — no markdown or commentary outside the JSON.**
 - **SQL must always use schema-qualified table names.**
@@ -1824,7 +2386,7 @@ If the user asks a question that appears to follow from a previous result, list,
 - **For potentially large datasets, always add LIMIT 50 to prevent performance issues.**
 - **If user asks for "all" records from large tables, suggest aggregations instead.**
 - **ALWAYS use descriptive column aliases in SQL for user-friendly display (e.g., 'reg_no as registration_number', 'name as plant_name')**
-- **Basic datetime formatting with TO_CHAR() is OK, but keep it simple**
+- **CRITICAL: ALWAYS format datetime columns using TO_CHAR() for user-friendly display - NEVER return raw ISO datetime formats**
 - **NEVER include suggestions, follow-up questions, or recommendations in responses**
 - For year-based filters (e.g., "deployed in 2022"), use:
   - `EXTRACT(YEAR FROM column) = 2022`, or

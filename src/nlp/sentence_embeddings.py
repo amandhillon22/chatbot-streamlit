@@ -18,23 +18,6 @@ from src.core.sql import get_full_schema, db_manager
 import warnings
 import uuid
 from datetime import datetime, timedelta
-from decimal import Decimal
-
-# Custom JSON encoder to handle datetime objects
-class DateTimeEncoder(json.JSONEncoder):
-    """Custom JSON encoder for datetime objects"""
-    def default(self, obj):
-        if isinstance(obj, (datetime.datetime, datetime.date, datetime.time)):
-            return obj.isoformat()
-        elif isinstance(obj, datetime.timedelta):
-            return str(obj)
-        elif isinstance(obj, Decimal):
-            return float(obj)
-        return super().default(obj)
-
-def safe_json_dumps(obj, **kwargs):
-    """Safely serialize objects to JSON, handling datetime and Decimal objects"""
-    return json.dumps(obj, cls=DateTimeEncoder, **kwargs)
 from typing import List, Dict, Optional
 import re
 import hashlib
@@ -100,7 +83,7 @@ PREVIOUS RESULTS CONTEXT:
 - Original query was: "{last_result['original_query']}"
 - Number of results shown: {last_result['displayed_count']}
 - Total results available: {last_result['result_count']}
-- Sample data structure: {safe_json_dumps(last_result['displayed_results'][0] if last_result['displayed_results'] else {}, indent=2)}
+- Sample data structure: {json.dumps(last_result['displayed_results'][0] if last_result['displayed_results'] else {}, indent=2)}
 
 IMPORTANT: The user is asking for something specific about the previous results. Analyze what they want:
 
@@ -413,30 +396,17 @@ Respond in JSON:
     # Enhanced fallback with smart pattern detection
     current_lower = current_query.lower()
     
-    # Advanced referential patterns with drum trip enhancements
+    # Advanced referential patterns
     referential_patterns = [
         "these", "those", "them", "the above", "from those", "of these",
         "which ones", "which of", "from the", "in those", "that data",
         "more detail", "more info", "expand on", "show details",
-        "give details", "tell me about", "explain the", "what about",
-        "also show", "same for", "for that", "about that"
+        "give details", "tell me about", "explain the"
     ]
     
-    # Entity-specific patterns with drum/concrete terms
-    detail_patterns = ["more detail", "more info", "tell me about", "explain", "show details", "what about", "expand"]
-    entity_indicators = [
-        "complaint", "issue", "leakage", "vehicle", "report", "record",  # Original
-        "drum", "concrete", "delivery", "trip", "cycle", "plant", "site",  # Drum-specific
-        "loading", "unloading", "transit", "mixer", "tm", "truck",  # TM-specific
-        "duration", "waiting", "speed", "distance", "location"  # Operational
-    ]
-    
-    # Drum trip specific follow-up patterns
-    drum_trip_patterns = [
-        "loading time", "unloading duration", "site waiting", "plant return",
-        "delivery cycle", "concrete transport", "plant departure", "site arrival",
-        "transit mixer", "drum operation", "cycle time", "delivery distance"
-    ]
+    # Entity-specific patterns
+    detail_patterns = ["more detail", "more info", "tell me about", "explain", "show details"]
+    entity_indicators = ["complaint", "issue", "leakage", "vehicle", "report", "record"]
     
     # Check for basic referential patterns
     has_referential_pattern = any(pattern in current_lower for pattern in referential_patterns)
@@ -444,7 +414,6 @@ Respond in JSON:
     # Enhanced detection for entity-specific requests
     has_detail_request = any(pattern in current_lower for pattern in detail_patterns)
     mentions_entity = any(entity in current_lower for entity in entity_indicators)
-    mentions_drum_operation = any(pattern in current_lower for pattern in drum_trip_patterns)
     
     # Context-aware detection
     has_conversation_context = len(conversation_history) > 0
@@ -475,15 +444,11 @@ Respond in JSON:
         is_referential = True
         confidence = 0.8
         reference_type = "demonstrative"
-    elif has_detail_request and (mentions_entity or mentions_drum_operation) and has_conversation_context:
+    elif has_detail_request and mentions_entity and has_conversation_context:
         is_referential = True
         confidence = 0.9
         reference_type = "entity_continuation"
-    elif mentions_drum_operation and has_conversation_context:
-        is_referential = True
-        confidence = 0.85
-        reference_type = "drum_operation_continuation"
-    elif has_conversation_context and any(term in current_lower for term in ["detail", "info", "about", "explain", "what about", "also show"]):
+    elif has_conversation_context and any(term in current_lower for term in ["detail", "info", "about", "explain"]):
         is_referential = True
         confidence = 0.7
         reference_type = "contextual"
@@ -493,7 +458,7 @@ Respond in JSON:
         "confidence": confidence,
         "reference_type": reference_type,
         "target_entity": target_entity,
-        "reasoning": f"Enhanced fallback: patterns={has_referential_pattern}, detail_request={has_detail_request}, entity={mentions_entity}, drum_ops={mentions_drum_operation}"
+        "reasoning": f"Enhanced fallback detection: patterns={has_referential_pattern}, detail_request={has_detail_request}, entity={mentions_entity}"
     }
 
 class SentenceEmbeddingManager:
@@ -676,7 +641,7 @@ class SentenceEmbeddingManager:
     
     def _create_table_description(self, table_name, columns):
         """Create a comprehensive description of a table for embedding."""
-        # Transportation domain specific descriptions with drum/concrete enhancements
+        # Transportation domain specific descriptions
         transportation_keywords = {
             'trip': 'vehicle journey travel route distance',
             'vehicle': 'bus car truck fleet transportation automobile',
@@ -697,29 +662,8 @@ class SentenceEmbeddingManager:
             'count': 'total number quantity amount',
             'total': 'sum aggregate count number',
             'so': 'sales order service order work order',
-            'details': 'information data records specifics',
-            'drum': 'concrete mixer transit TM delivery loading unloading plant site cycle',
-            'plant': 'concrete depot facility loading mixing production',
-            'site': 'customer destination delivery location unloading',
-            'concrete': 'cement material mixture delivery construction',
-            'cycle': 'round trip plant site return complete journey',
-            'unloading': 'discharge delivery concrete material site',
-            'loading': 'filling concrete drum plant material',
-            'duration': 'time period elapsed waiting travel',
-            'waiting': 'idle time delay site plant queue'
+            'details': 'information data records specifics'
         }
-        
-        # Special handling for drum_trip_report table
-        if table_name == 'drum_trip_report':
-            description = f"Database table {table_name} stores comprehensive transit mixer concrete delivery operations tracking complete plant-to-site-to-plant cycles for concrete drum vehicles. "
-            description += "Contains detailed timing data including plant departure site arrival unloading duration site waiting plant return. "
-            description += "Tracks distance measurements plant-to-site site-to-plant total cycle distance in kilometers. "
-            description += "Records speed analytics maximum average speeds during transport. "
-            description += "Stores location coordinates for plant and customer site locations. "
-            description += "Includes concrete loading time drum filling duration delivery operations. "
-            description += "Links vehicle registration numbers plant depot IDs delivery ticket numbers. "
-            description += f"Data columns: {', '.join(columns)}."
-            return description
         
         # Generate contextual description starting with the exact table name
         description = f"Database table named {table_name} "
@@ -739,11 +683,9 @@ class SentenceEmbeddingManager:
         # Add column information with semantic context
         description += f"Contains data columns: {', '.join(columns)}. "
         
-        # Add column-based semantic context with enhanced detection
+        # Add column-based semantic context with distance unit detection
         semantic_context = []
         distance_columns = []
-        time_columns = []
-        location_columns = []
         
         for col in columns:
             col_lower = col.lower()
@@ -751,13 +693,8 @@ class SentenceEmbeddingManager:
                 semantic_context.append("identifier")
             elif any(keyword in col_lower for keyword in ['name', 'title', 'description']):
                 semantic_context.append("name or description")
-            elif any(keyword in col_lower for keyword in ['date', 'time', 'timestamp', 'out', 'in']):
-                if any(word in col_lower for word in ['duration', 'waiting', 'loading']):
-                    time_columns.append(f"{col} (time duration)")
-                    semantic_context.append("time duration data")
-                else:
-                    time_columns.append(f"{col} (timestamp)")
-                    semantic_context.append("temporal data")
+            elif any(keyword in col_lower for keyword in ['date', 'time', 'timestamp']):
+                semantic_context.append("temporal data")
             elif any(keyword in col_lower for keyword in ['distance', 'km', 'mile', 'meter', 'metre']):
                 # Enhanced distance detection with unit hints
                 if 'km' in col_lower or 'kilometer' in col_lower:
@@ -776,25 +713,16 @@ class SentenceEmbeddingManager:
             elif any(keyword in col_lower for keyword in ['speed', 'velocity']):
                 semantic_context.append("speed measurement")
             elif any(keyword in col_lower for keyword in ['lat', 'lng', 'longitude', 'latitude', 'location']):
-                location_columns.append(f"{col} (coordinates)")
                 semantic_context.append("geographic coordinates")
             elif any(keyword in col_lower for keyword in ['count', 'total', 'sum', 'amount']):
                 semantic_context.append("numerical aggregate")
-            elif any(keyword in col_lower for keyword in ['plant', 'site', 'drum', 'cycle']):
-                semantic_context.append("concrete delivery operations")
-            elif any(keyword in col_lower for keyword in ['unloading', 'loading']):
-                semantic_context.append("material handling operations")
                 
         if semantic_context:
             description += f"This table stores {', '.join(set(semantic_context))}."
             
-        # Add specific column type information
+        # Add specific distance column information
         if distance_columns:
             description += f" Distance columns: {', '.join(distance_columns)}."
-        if time_columns:
-            description += f" Time columns: {', '.join(time_columns)}."
-        if location_columns:
-            description += f" Location columns: {', '.join(location_columns)}."
             
         return description
     
@@ -1220,7 +1148,7 @@ class SentenceEmbeddingManager:
                 prompt_parts.append(f"  User: {turn['user_message']}")
                 prompt_parts.append(f"  Bot: {turn['bot_response'][:100]}...")
                 if turn.get('entities'):
-                    prompt_parts.append(f"  Entities: {safe_json_dumps(turn['entities'])}")
+                    prompt_parts.append(f"  Entities: {json.dumps(turn['entities'])}")
         
         # AI understanding guidelines
         prompt_parts.extend([
@@ -1236,7 +1164,7 @@ class SentenceEmbeddingManager:
         
         current_query_analysis = self.extract_conversational_entities(current_query, context)
         if current_query_analysis:
-            prompt_parts.append(f"\n🔍 CURRENT QUERY ANALYSIS: {safe_json_dumps(current_query_analysis)}")
+            prompt_parts.append(f"\n🔍 CURRENT QUERY ANALYSIS: {json.dumps(current_query_analysis)}")
         
         return "\n".join(prompt_parts)
 

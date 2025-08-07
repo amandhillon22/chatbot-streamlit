@@ -50,7 +50,7 @@ class IntelligentReasoning:
             'table_name': 'dpr_master1',
             'description': 'Daily Production Report for concrete orders and deliveries',
             'key_columns': {
-                'id_no': 'Unique row identifier',
+                'id_no': 'Unique row identifier (DPR ID - NEVER confuse with vehicle registration)',
                 'plant_id': 'Links to hosp_master.id_no for plant details',
                 'pi_name': 'Plant incharge name',
                 'cust_name': 'Customer name for delivery',
@@ -59,7 +59,7 @@ class IntelligentReasoning:
                 'site_id': 'Links to site_master1.id_no for site details',
                 'fse_name': 'Sales person name (format: surname, firstname)',
                 'site_distance': 'Distance from plant to site (km)',
-                'tm_no': 'Transit Mixer registration (links to vehicle_master.reg_no)',
+                'tm_no': 'Transit Mixer registration (links to vehicle_master.reg_no - vehicle identifier, NOT DPR ID)',
                 'vol_cum': 'Concrete volume in TM (out of 7 m³ total)',
                 'grade': 'Concrete mixture grade',
                 'smode': 'Service mode (with pump/without pump)',
@@ -2672,7 +2672,22 @@ class IntelligentReasoning:
         # Add vehicle filter if vehicle entity is found
         for entity in entities:
             if entity.get('entity_type') == 'vehicle':
-                conditions.append(f"dpr.tm_no ILIKE '%{entity['value']}%'")
+                # FIXED: Use helper function to distinguish DPR IDs from vehicle registrations
+                # dpr.tm_no should contain vehicle registration numbers (links to vehicle_master.reg_no)
+                # Never confuse with dpr.id_no (which is internal DPR ID)
+                vehicle_value = entity['value']
+                
+                # Use the new helper function to properly classify the identifier
+                classification = self.distinguish_dpr_id_from_vehicle_reg(vehicle_value)
+                
+                if classification['type'] == 'dpr_id':
+                    # This is a DPR ID - use direct lookup
+                    conditions.append(f"dpr.id_no = {vehicle_value}")
+                    print(f"🔧 [DPR FIX] Using DPR ID search: {classification['suggested_query']} (Reason: {classification['reasoning']})")
+                else:
+                    # This is a vehicle registration - use tm_no field
+                    conditions.append(classification['suggested_query'])
+                    print(f"🔧 [DPR FIX] Using vehicle registration search: {classification['suggested_query']} (Reason: {classification['reasoning']})")
         
         # Add WHERE clause if conditions exist
         if conditions:
@@ -2682,6 +2697,65 @@ class IntelligentReasoning:
         base_query += " ORDER BY dpr.id_no DESC LIMIT 50"
         
         return base_query
+
+    def distinguish_dpr_id_from_vehicle_reg(self, value):
+        """
+        Distinguish between DPR IDs and vehicle registration numbers to prevent identifier confusion.
+        
+        Args:
+            value (str): The identifier value to classify
+            
+        Returns:
+            dict: Classification result with type and recommended usage
+        """
+        if not value:
+            return {'type': 'unknown', 'field': None, 'reasoning': 'Empty value'}
+        
+        value_str = str(value).strip()
+        
+        # DPR ID patterns (purely numeric)
+        if value_str.isdigit():
+            return {
+                'type': 'dpr_id',
+                'field': 'dpr.id_no',
+                'reasoning': 'Purely numeric - likely internal DPR ID',
+                'suggested_query': f"dpr.id_no = {value_str}"
+            }
+        
+        # Vehicle registration patterns (alphanumeric with various formats)
+        # Common vehicle registration formats: HR55AN1234, MH01AB1234, KA03MH6789, etc.
+        vehicle_patterns = [
+            r'^[A-Z]{2}\d{2}[A-Z]{1,2}\d{4}$',  # Standard Indian format: HR55AN1234
+            r'^[A-Z]{1,3}\d{1,4}[A-Z]{0,3}\d{0,4}$',  # Various state formats
+            r'^[A-Z]+\d+[A-Z]*\d*$',  # General alphanumeric vehicle pattern
+        ]
+        
+        import re
+        for pattern in vehicle_patterns:
+            if re.match(pattern, value_str.upper()):
+                return {
+                    'type': 'vehicle_registration',
+                    'field': 'dpr.tm_no',
+                    'reasoning': f'Matches vehicle registration pattern: {pattern}',
+                    'suggested_query': f"dpr.tm_no ILIKE '%{value_str}%'"
+                }
+        
+        # Mixed alphanumeric - likely vehicle registration
+        if re.match(r'^[A-Z0-9]+$', value_str.upper()) and not value_str.isdigit():
+            return {
+                'type': 'vehicle_registration',
+                'field': 'dpr.tm_no', 
+                'reasoning': 'Mixed alphanumeric - likely vehicle registration',
+                'suggested_query': f"dpr.tm_no ILIKE '%{value_str}%'"
+            }
+        
+        # Default to vehicle registration for non-numeric values
+        return {
+            'type': 'vehicle_registration',
+            'field': 'dpr.tm_no',
+            'reasoning': 'Non-numeric value - defaulting to vehicle registration',
+            'suggested_query': f"dpr.tm_no ILIKE '%{value_str}%'"
+        }
 
     def is_dpr_related_query(self, user_input):
         """Check if the query is related to Daily Production Report"""
@@ -3306,50 +3380,3 @@ class IntelligentReasoning:
             'time_period': time_period,
             'additional_joins': ['vehicle_master', 'hosp_master', 'district_master']
         }
-
-def test_intelligent_reasoning():
-    """Test the intelligent reasoning system"""
-    print("🧠 Testing Intelligent Reasoning System")
-    print("=" * 50)
-    
-    reasoning = IntelligentReasoning()
-    
-    # Mock chat context with complaint data
-    class MockChatContext:
-        def __init__(self):
-            self.last_displayed_items = [
-                {
-                    'complaint_id': 172,
-                    'plant_id': 435,
-                    'customer_id': 119898,
-                    '_original_question': 'site visit details of complaint id 172'
-                }
-            ]
-            self.history = []
-    
-    context = MockChatContext()
-    
-    # Test cases
-    test_queries = [
-        "can you tell me the plant name for complaint id 172",
-        "what is the plant name for the one mentioned in complaint id 172", 
-        "tell me the plant name if you have the plant id",
-        "the plant name for that complaint"
-    ]
-    
-    for query in test_queries:
-        print(f"\n📝 Testing: '{query}'")
-        
-        result = reasoning.analyze_query_intent(query, context)
-        if result:
-            print(f"✅ Intent detected: {result['intent']}")
-            print(f"📊 Extracted data: {result['extracted_data']}")
-            
-            sql = reasoning.generate_intelligent_query(result)
-            if sql:
-                print(f"🔧 Generated SQL: {sql.strip()}")
-        else:
-            print("❌ No intelligent reasoning needed")
-
-if __name__ == "__main__":
-    test_intelligent_reasoning()

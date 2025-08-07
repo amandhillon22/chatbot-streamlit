@@ -176,62 +176,6 @@ class DatabaseReferenceParser:
             'driver': ['driver_master', 'drv_veh_qr_assign'],
             'gps': ['gps_data', 'location_master'],
             
-            # Driver Management - Fleet Operations
-            'driver_details': ['driver_master'],
-            'driver_information': ['driver_master'],
-            'driver_profile': ['driver_master'],
-            'driving_license': ['driver_master'],
-            'license_number': ['driver_master'],
-            'license_expiry': ['driver_master'],
-            'license_renewal': ['driver_master'],
-            'driver_assignment': ['driver_master', 'hosp_master'],
-            'plant_drivers': ['driver_master', 'hosp_master'],
-            'depot_drivers': ['driver_master', 'hosp_master'],
-            'driver_contact': ['driver_master'],
-            'mobile_number': ['driver_master'],
-            'phone_number': ['driver_master'],
-            'driver_age': ['driver_master'],
-            'driver_gender': ['driver_master'],
-            'driver_demographics': ['driver_master'],
-            'service_duration': ['driver_master'],
-            'years_of_service': ['driver_master'],
-            'employment_duration': ['driver_master'],
-            'tshirt_size': ['driver_master'],
-            'uniform_size': ['driver_master'],
-            'driver_uniform': ['driver_master'],
-            'driver_code': ['driver_master'],
-            'd_code': ['driver_master'],
-            'employee_code': ['driver_master'],
-            'drv_id': ['driver_master'],
-            'driver_id': ['driver_master'],
-            'birthday': ['driver_master'],
-            'birth_date': ['driver_master'],
-            'date_of_birth': ['driver_master'],
-            'born': ['driver_master'],
-            'size': ['driver_master'],
-            'size_of': ['driver_master'],
-            
-            # DPR (Daily Production Report) - Concrete Operations
-            'dpr': ['dpr_master1'],
-            'daily_production': ['dpr_master1'],
-            'production_report': ['dpr_master1'],
-            'concrete_order': ['dpr_master1'],
-            'concrete_delivery': ['dpr_master1'],
-            'ready_mix': ['dpr_master1'],
-            'readymix': ['dpr_master1'],
-            'transit_mixer': ['dpr_master1', 'vehicle_master'],
-            'tm': ['dpr_master1', 'vehicle_master'],
-            'concrete_truck': ['dpr_master1', 'vehicle_master'],
-            'customer_delivery': ['dpr_master1', 'site_customer1'],
-            'site_delivery': ['dpr_master1', 'site_master1'],
-            'sales_person': ['dpr_master1'],
-            'fse': ['dpr_master1'],
-            'concrete_grade': ['dpr_master1'],
-            'batch_order': ['dpr_master1'],
-            'pump_delivery': ['dpr_master1'],
-            'challan': ['dpr_master1'],
-            'sales_order': ['dpr_master1'],
-            
             # Time & Scheduling
             'schedule': ['route_master', 'schedule_master', 'trip_report'],
             'daily': ['daily_report', 'trip_report'],
@@ -368,35 +312,6 @@ class DatabaseReferenceParser:
         # Add CRM-specific context if applicable
         if table_lower in crm_contexts:
             contexts.extend(crm_contexts[table_lower])
-        
-        # DPR (Daily Production Report) Context
-        if table_lower == 'dpr_master1':
-            contexts.extend([
-                "Daily Production Report for concrete orders and deliveries",
-                "Tracks concrete production, delivery assignments, and customer orders",
-                "Interconnected with trip_report and drum_trip_report for complete delivery tracking",
-                "CRITICAL: Always use dpr_master1, never dpr_master",
-                "Transit Mixer capacity: vol_cum out of 7 m³ total capacity",
-                "Sales person name format: fse_name stored as 'surname, firstname' → display as 'firstname surname'",
-                "Service modes: 'with pump' or 'without pump'",
-                "Key relationships: plant_id→hosp_master.id_no, tm_no→vehicle_master.reg_no, tkt_no→drum_trip_report.tkt_no"
-            ])
-        
-        # Driver Master Context
-        if table_lower == 'driver_master':
-            contexts.extend([
-                "Comprehensive driver information for transportation fleet management",
-                "Contains personal details, licensing information, and work assignments",
-                "Primary key: id_no (referenced as drv_id, driver_id, or similar in other tables)",
-                "Display names as: first_name + ' ' + last_name (firstname lastname format)",
-                "Plant assignment: id_depo links to hosp_master.id_no for plant/depot details",
-                "License monitoring: Track lic_exp for renewal alerts and compliance",
-                "Unique constraints: d_code (driver code), lic_no (license number), telephone (mobile)",
-                "Contact information: telephone contains primary mobile numbers",
-                "Uniform management: tshirt_size for logistics (S, M, L, XL)",
-                "Employment tracking: dt_of_joining for service duration calculation",
-                "Demographics: dt_of_birth for age calculation, gender for analysis"
-            ])
         
         # Core business entities
         if any(word in table_lower for word in ['trip', 'journey']):

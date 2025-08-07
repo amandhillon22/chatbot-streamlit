@@ -137,10 +137,13 @@ class ChatHistoryManager:
             
             session_db_id, current_title = session_data
             
+            # Determine if this is a user message
+            is_user_message = (message_type == 'user')
+            
             cursor.execute(
-                """INSERT INTO chat_messages (session_id, message_type, content, sql_query) 
-                   VALUES (%s, %s, %s, %s)""",
-                (session_db_id, message_type, content, sql_query)
+                """INSERT INTO chat_messages (session_id, message_type, content, sql_query, is_user_message) 
+                   VALUES (%s, %s, %s, %s, %s)""",
+                (session_db_id, message_type, content, sql_query, is_user_message)
             )
             
             # Auto-update session title if it's the first user message and title is generic
